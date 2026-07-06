@@ -1,0 +1,24 @@
+name: release-athena
+
+# release-please for athena itself (mirrors platform, D-14/D-18). On every push to main it
+# maintains a running "chore: release vX.Y.Z" PR from Conventional Commits; merging that PR
+# (a human-only action) tags vX.Y.Z and cuts a GitHub Release. The published release then
+# triggers update-major-tag.yml, which moves the `v1` tag that consumers pin (athena@v1).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

@@ -1,0 +1,27 @@
+name: update-major-tag
+
+# Implements the version-pin contract (D-18) for athena: consumers reference the moving
+# major tag `athena@v1`. When release-please publishes a release (e.g. v1.4.2), this
+# force-moves `v1` to that commit, so consumers get fixes automatically and breakage only
+# ever arrives by an explicit major bump.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Move major tag
+        run: |
+          MAJOR=$(echo "${GITHUB_REF_NAME}" | cut -d. -f1) # v1.4.2 -> v1
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "${MAJOR}"
+          git push -f origin "${MAJOR}"
