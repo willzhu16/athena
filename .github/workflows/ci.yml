@@ -1,0 +1,17 @@
+name: ci
+
+# athena dogfoods the platform pipeline it helps define (spec 04 §3). The job id `ci`
+# prefixes the check names ci/{lint,typecheck,test,commits}. Resolves once platform is
+# published and its v1 tag exists.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: willzhu16/platform/.github/workflows/ci.yml@v1

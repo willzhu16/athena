@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(pnpm run lint:*)",
+      "Bash(pnpm run typecheck:*)",
+      "Bash(pnpm run test:*)"
+    ],
+    "deny": [
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh secret:*)",
+      "Bash(wrangler deploy:*)",
+      "Bash(wrangler secret:*)",
+      "Bash(sops -d:*)",
+      "Bash(sops --decrypt:*)",
+      "Bash(tofu apply:*)",
+      "Bash(rm:*)"
+    ]
+  }
+}

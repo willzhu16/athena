@@ -1,0 +1,2 @@
+# Linux-canonical repo (D-20): normalise all text to LF in the repository and on checkout.
+* text=auto eol=lf

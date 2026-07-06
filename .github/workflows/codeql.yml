@@ -1,0 +1,19 @@
+name: codeql
+
+# athena is a public repo (D-03), so it gets CodeQL (spec 02 §3.4). Check: codeql / analyze.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  codeql:
+    uses: willzhu16/platform/.github/workflows/codeql.yml@v1
+    with:
+      languages: javascript-typescript

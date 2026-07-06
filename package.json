@@ -1,0 +1,22 @@
+{
+  "name": "athena",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "lint": "biome ci .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "compile": "tsx compile.ts",
+    "doctor": "tsx doctor.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "tsx": "^4.19.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

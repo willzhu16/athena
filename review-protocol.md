@@ -1,0 +1,56 @@
+# Review protocol
+
+Normative for the AI review pass (spec 10) and usable manually today. The human is always
+the last gate; this protocol governs what happens before that final read.
+
+## When an author-agent may claim "done"
+
+Only when local gates are green:
+
+1. typecheck, lint, tests — including **one new test that fails without the change**
+   (regression rule).
+2. gitleaks, semgrep clean.
+3. For behaviour-affecting changes: **evidence of exercising the change for real** in the
+   PR (command output, curl transcript, screenshot). Green tests prove the tests pass, not
+   that the feature works.
+
+## The review (fresh session, different model when convenient)
+
+The reviewer reads the **diff against the task packet** — not the whole repo, not against
+its own taste.
+
+**Blocking findings (only these two):**
+
+1. A new dependency introduced without human acknowledgment.
+2. An acceptance criterion with no covering test.
+
+**Everything else is advisory.** A finding must cite `file:line` and a concrete failure
+scenario. "Could be cleaner" is not a finding — style belongs to the linter, which already
+ran. The author-agent may `wontfix` an advisory finding with one sentence of reasoning; the
+human sees both sides at merge time.
+
+## Anti-loop rules (binding on all agents)
+
+1. **Max two review rounds** per PR. Round three = stop, summarise the disagreement, human
+   decides.
+2. A review finding cites `file:line` + a concrete failure scenario, or it is invalid.
+3. **No re-litigating** settled decisions (DECISIONS.md, in-repo ADRs) or the packet's
+   non-goals. A reviewer who disagrees with the architecture files an issue, not a comment.
+4. The author-agent may `wontfix` an advisory finding with one sentence; it is not silently
+   dropped.
+5. **A fix that fails its gate twice in a row = stop and report, do not thrash.** This is the
+   single most important rule for token- and sanity-economics.
+6. Settled decisions and packet non-goals are not reviewable; disagreement becomes a new
+   issue.
+
+## Session log (last block of every agent PR description)
+
+```
+## Session log
+Tool/model: … | Packet: #NN
+Tried: … | Dead ends: … | Decisions made and why: …
+```
+
+This is the audit trail (ARCHITECTURE §6.6) and the input to improving the instruction
+layers: recurring mistakes become new lint/CI rules (preferred) or instruction lines
+(fallback) at the monthly session-log harvest (spec 05 cadence).

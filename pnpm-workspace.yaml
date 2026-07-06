@@ -1,0 +1,4 @@
+# pnpm reads build-script approvals here. esbuild ships a prebuilt binary and needs its
+# install script to run; tsx and vitest depend on it.
+allowBuilds:
+  esbuild: true

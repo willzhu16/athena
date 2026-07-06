@@ -1,0 +1,13 @@
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    uses: willzhu16/platform/.github/workflows/security.yml@v1

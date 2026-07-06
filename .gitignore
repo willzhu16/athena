@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build / test output
+dist/
+coverage/
+.vitest/
+
+# Editor / OS
+.DS_Store
