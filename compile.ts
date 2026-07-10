@@ -37,6 +37,9 @@ export interface CompiledOutputs {
 
 const MARKER = 'ATHENA-COMPILED';
 
+/** Tools compile knows how to emit files for. An unknown name is a config error, not a fallback. */
+export const KNOWN_TOOLS = ['claude', 'codex'] as const;
+
 /** Instruction layer filenames for a config, in canonical merge order (numeric prefix). */
 export const resolveLayers = (config: AthenaConfig): string[] => {
   const layers = ['00-universal.md', '10-security.md', `20-stack-${config.stack}.md`];
@@ -90,6 +93,13 @@ export const readDeclaredHash = (compiled: string): string | null => {
 
 /** Produce every output file's contents for a config. Pure: performs no filesystem writes. */
 export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOutputs => {
+  for (const tool of config.tools) {
+    if (!(KNOWN_TOOLS as readonly string[]).includes(tool)) {
+      throw new Error(
+        `athena: unknown tool "${tool}" in config.tools — known tools: ${KNOWN_TOOLS.join(', ')}`,
+      );
+    }
+  }
   const body = buildBody(config, inputs.instructionsDir, inputs.projectLayer);
   const hash = computeHash(body);
   const compiled = render(config, body, hash);
@@ -103,8 +113,6 @@ export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOu
       );
     } else if (tool === 'codex') {
       files['AGENTS.md'] = compiled;
-    } else {
-      files['athena-system-prompt.md'] = compiled;
     }
   }
   return { hash, body, files };
