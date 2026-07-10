@@ -24,9 +24,43 @@ const readProjectLayer = (projectDir: string): string => {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
 };
 
+/**
+ * Reject configs that parse as JSON but do not have the AthenaConfig shape. Doctor's
+ * whole job is reporting, so a malformed field must become a FAIL check downstream
+ * instead of a TypeError here.
+ */
+const configShapeError = (config: AthenaConfig): string | null => {
+  if (typeof config.stack !== 'string' || config.stack === '') {
+    return 'invalid: "stack" must be a non-empty string';
+  }
+  if (!Array.isArray(config.targets)) {
+    return 'invalid: "targets" must be an array';
+  }
+  if (!Array.isArray(config.tools)) {
+    return 'invalid: "tools" must be an array';
+  }
+  return null;
+};
+
 const presenceCheck = (projectDir: string, file: string): Check => {
   const ok = existsSync(join(projectDir, file));
   return { name: file, ok, detail: ok ? 'present' : 'missing' };
+};
+
+const settingsProfileCheck = (projectDir: string, permissionsDir: string): Check => {
+  const path = join(projectDir, '.claude', 'settings.json');
+  if (!existsSync(path)) {
+    return { name: '.claude/settings.json', ok: false, detail: 'missing — run `athena compile`' };
+  }
+
+  const expected = readFileSync(join(permissionsDir, 't1.settings.json'), 'utf8');
+  const actual = readFileSync(path, 'utf8');
+  const ok = actual === expected;
+  return {
+    name: '.claude/settings.json',
+    ok,
+    detail: ok ? 'matches t1 profile' : 'content differs from t1 settings profile',
+  };
 };
 
 /**
@@ -55,7 +89,11 @@ const freshnessCheck = (projectDir: string, file: string, expectedHash: string):
 };
 
 /** Validate a repo's athena harness state. Returns one Check per invariant. */
-export const doctor = (projectDir: string, instructionsDir: string): Check[] => {
+export const doctor = (
+  projectDir: string,
+  instructionsDir: string,
+  permissionsDir?: string,
+): Check[] => {
   if (!existsSync(join(projectDir, '.athena', 'config.json'))) {
     return [{ name: 'config', ok: false, detail: '.athena/config.json missing' }];
   }
@@ -65,15 +103,26 @@ export const doctor = (projectDir: string, instructionsDir: string): Check[] => 
   } catch (error) {
     return [{ name: 'config', ok: false, detail: `unparseable: ${(error as Error).message}` }];
   }
+  const shapeError = configShapeError(config);
+  if (shapeError) {
+    return [{ name: 'config', ok: false, detail: shapeError }];
+  }
   const checks: Check[] = [
     { name: 'config', ok: true, detail: `stack=${config.stack} tools=${config.tools.join(',')}` },
   ];
-  const expectedHash = computeHash(
-    buildBody(config, instructionsDir, readProjectLayer(projectDir)),
-  );
+  let expectedHash: string;
+  try {
+    expectedHash = computeHash(buildBody(config, instructionsDir, readProjectLayer(projectDir)));
+  } catch (error) {
+    // A stack/target naming a nonexistent layer is a config problem to report, not a crash.
+    checks.push({ name: 'layers', ok: false, detail: (error as Error).message });
+    return checks;
+  }
+  const resolvedPermissionsDir =
+    permissionsDir ?? join(dirname(fileURLToPath(import.meta.url)), 'permissions');
   if (config.tools.includes('claude')) {
     checks.push(freshnessCheck(projectDir, 'CLAUDE.md', expectedHash));
-    checks.push(presenceCheck(projectDir, '.claude/settings.json'));
+    checks.push(settingsProfileCheck(projectDir, resolvedPermissionsDir));
   }
   if (config.tools.includes('codex')) {
     checks.push(freshnessCheck(projectDir, 'AGENTS.md', expectedHash));
