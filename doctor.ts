@@ -24,6 +24,24 @@ const readProjectLayer = (projectDir: string): string => {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
 };
 
+/**
+ * Reject configs that parse as JSON but do not have the AthenaConfig shape. Doctor's
+ * whole job is reporting, so a malformed field must become a FAIL check downstream
+ * instead of a TypeError here.
+ */
+const configShapeError = (config: AthenaConfig): string | null => {
+  if (typeof config.stack !== 'string' || config.stack === '') {
+    return 'invalid: "stack" must be a non-empty string';
+  }
+  if (!Array.isArray(config.targets)) {
+    return 'invalid: "targets" must be an array';
+  }
+  if (!Array.isArray(config.tools)) {
+    return 'invalid: "tools" must be an array';
+  }
+  return null;
+};
+
 const presenceCheck = (projectDir: string, file: string): Check => {
   const ok = existsSync(join(projectDir, file));
   return { name: file, ok, detail: ok ? 'present' : 'missing' };
@@ -85,12 +103,21 @@ export const doctor = (
   } catch (error) {
     return [{ name: 'config', ok: false, detail: `unparseable: ${(error as Error).message}` }];
   }
+  const shapeError = configShapeError(config);
+  if (shapeError) {
+    return [{ name: 'config', ok: false, detail: shapeError }];
+  }
   const checks: Check[] = [
     { name: 'config', ok: true, detail: `stack=${config.stack} tools=${config.tools.join(',')}` },
   ];
-  const expectedHash = computeHash(
-    buildBody(config, instructionsDir, readProjectLayer(projectDir)),
-  );
+  let expectedHash: string;
+  try {
+    expectedHash = computeHash(buildBody(config, instructionsDir, readProjectLayer(projectDir)));
+  } catch (error) {
+    // A stack/target naming a nonexistent layer is a config problem to report, not a crash.
+    checks.push({ name: 'layers', ok: false, detail: (error as Error).message });
+    return checks;
+  }
   const resolvedPermissionsDir =
     permissionsDir ?? join(dirname(fileURLToPath(import.meta.url)), 'permissions');
   if (config.tools.includes('claude')) {
