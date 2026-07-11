@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.1](https://github.com/willzhu16/athena/compare/v1.1.0...v1.1.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **compile:** reject unknown tools in config.tools ([c8a465c](https://github.com/willzhu16/athena/commit/c8a465cc1c39ec13d85fb9d88ab0c8e61eadac1f))
+* **doctor:** match compile's tool validation and never crash ([3787aea](https://github.com/willzhu16/athena/commit/3787aeadab9b8327b1d643feb9af8f6ddc6515d7))
+* **doctor:** match compile's tool validation and never crash ([3104c2a](https://github.com/willzhu16/athena/commit/3104c2a8a4b3c99a6defeca224d48f68a1dfac2f))
+* **release:** dispatch the v1 tag mover explicitly ([275f733](https://github.com/willzhu16/athena/commit/275f733186a08e1231ddb28e631991842690aa52))
+* **release:** dispatch the v1 tag mover explicitly ([9d6a36a](https://github.com/willzhu16/athena/commit/9d6a36a5c536fcb000d1b8c162aba6584408bed9))
+
 ## [1.1.0](https://github.com/willzhu16/athena/compare/v1.0.0...v1.1.0) (2026-07-10)
 
 
