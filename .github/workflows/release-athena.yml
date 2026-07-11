@@ -2,8 +2,8 @@ name: release-athena
 
 # release-please for athena itself (mirrors platform, D-14/D-18). On every push to main it
 # maintains a running "chore: release vX.Y.Z" PR from Conventional Commits; merging that PR
-# (a human-only action) tags vX.Y.Z and cuts a GitHub Release. The published release then
-# triggers update-major-tag.yml, which moves the `v1` tag that consumers pin (athena@v1).
+# (a human-only action) tags vX.Y.Z and cuts a GitHub Release. This workflow then
+# dispatches update-major-tag.yml, which moves the `v1` tag consumers pin (athena@v1).
 
 on:
   push:
@@ -12,6 +12,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write # the handover step dispatches update-major-tag.yml
 
 jobs:
   release-please:
@@ -19,6 +20,17 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      - name: Move the v1 tag consumers pin
+        # Releases cut with GITHUB_TOKEN never fire `release: published` workflows
+        # (GitHub suppresses GITHUB_TOKEN-created events — workflow_dispatch is the
+        # documented exception), so hand over to update-major-tag.yml explicitly.
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run update-major-tag.yml --ref main -f "tag=$TAG"

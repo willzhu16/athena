@@ -4,10 +4,21 @@ name: update-major-tag
 # major tag `athena@v1`. When release-please publishes a release (e.g. v1.4.2), this
 # force-moves `v1` to that commit, so consumers get fixes automatically and breakage only
 # ever arrives by an explicit major bump.
+#
+# release-please cuts its releases with GITHUB_TOKEN, whose events never trigger other
+# workflows — so release-athena.yml dispatches this workflow explicitly after publishing
+# (workflow_dispatch is the documented exception to that suppression). The
+# `release: published` trigger is kept for releases cut by hand or with a PAT.
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.Y.Z release tag to move the major tag onto
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,10 +28,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - name: Move major tag
+      - name: Resolve and guard the release tag
+        id: tag
+        # Only a plain vX.Y.Z tag may move a major tag (D-18) — an unexpected ref name
+        # must never force-push a bogus major tag. The raw value goes through env,
+        # never into the script text.
+        env:
+          RAW_TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
         run: |
-          MAJOR=$(echo "${GITHUB_REF_NAME}" | cut -d. -f1) # v1.4.2 -> v1
+          if echo "$RAW_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::'$RAW_TAG' is not a vX.Y.Z release tag"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+      - name: Move major tag
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          MAJOR=$(echo "$TAG" | cut -d. -f1) # v1.4.2 -> v1
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f "${MAJOR}"
