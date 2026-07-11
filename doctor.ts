@@ -1,7 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type AthenaConfig, buildBody, computeHash, extractBody } from './compile.ts';
+import {
+  type AthenaConfig,
+  buildBody,
+  computeHash,
+  extractBody,
+  KNOWN_TOOLS,
+  SETTINGS_PROFILE,
+} from './compile.ts';
 
 /**
  * `athena doctor`: validates that a repo's harness state is consistent — config parses,
@@ -39,6 +46,12 @@ const configShapeError = (config: AthenaConfig): string | null => {
   if (!Array.isArray(config.tools)) {
     return 'invalid: "tools" must be an array';
   }
+  // Parity with compile: a tool name compile would reject must not pass doctor, or a
+  // typo like "claud" silently disables every instruction-file check.
+  const unknown = config.tools.filter((tool) => !(KNOWN_TOOLS as readonly string[]).includes(tool));
+  if (unknown.length > 0) {
+    return `invalid: unknown tool(s) ${unknown.join(', ')} — known tools: ${KNOWN_TOOLS.join(', ')}`;
+  }
   return null;
 };
 
@@ -53,7 +66,18 @@ const settingsProfileCheck = (projectDir: string, permissionsDir: string): Check
     return { name: '.claude/settings.json', ok: false, detail: 'missing — run `athena compile`' };
   }
 
-  const expected = readFileSync(join(permissionsDir, 't1.settings.json'), 'utf8');
+  let expected: string;
+  try {
+    expected = readFileSync(join(permissionsDir, SETTINGS_PROFILE), 'utf8');
+  } catch (error) {
+    // A missing/unreadable profile is an athena-side problem, but it still must surface
+    // as a FAIL check — doctor reports, it never crashes.
+    return {
+      name: '.claude/settings.json',
+      ok: false,
+      detail: `cannot read expected profile ${SETTINGS_PROFILE}: ${(error as Error).message}`,
+    };
+  }
   const actual = readFileSync(path, 'utf8');
   const ok = actual === expected;
   return {
@@ -110,21 +134,24 @@ export const doctor = (
   const checks: Check[] = [
     { name: 'config', ok: true, detail: `stack=${config.stack} tools=${config.tools.join(',')}` },
   ];
-  let expectedHash: string;
+  let expectedHash: string | null = null;
   try {
     expectedHash = computeHash(buildBody(config, instructionsDir, readProjectLayer(projectDir)));
   } catch (error) {
     // A stack/target naming a nonexistent layer is a config problem to report, not a crash.
+    // Only the freshness checks need the hash — the hash-independent checks still run below,
+    // so one report shows everything wrong instead of revealing failures one fix at a time.
     checks.push({ name: 'layers', ok: false, detail: (error as Error).message });
-    return checks;
   }
   const resolvedPermissionsDir =
     permissionsDir ?? join(dirname(fileURLToPath(import.meta.url)), 'permissions');
   if (config.tools.includes('claude')) {
-    checks.push(freshnessCheck(projectDir, 'CLAUDE.md', expectedHash));
+    if (expectedHash !== null) {
+      checks.push(freshnessCheck(projectDir, 'CLAUDE.md', expectedHash));
+    }
     checks.push(settingsProfileCheck(projectDir, resolvedPermissionsDir));
   }
-  if (config.tools.includes('codex')) {
+  if (config.tools.includes('codex') && expectedHash !== null) {
     checks.push(freshnessCheck(projectDir, 'AGENTS.md', expectedHash));
   }
   checks.push(presenceCheck(projectDir, '.github/ISSUE_TEMPLATE/task.yml'));

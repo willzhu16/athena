@@ -51,6 +51,77 @@ describe('doctor (config problems become failed checks, never crashes)', () => {
     }
   });
 
+  it('reports a config naming an unknown tool as a failed check (parity with compile)', () => {
+    // Regression: doctor greenlit tools:["claud"] with an all-PASS report — the typo
+    // disabled every instruction-file check — while compile rejected the same config.
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({ athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claud'] }),
+      );
+
+      const checks = doctor(projectDir, instructionsDir);
+
+      expect(checks).toHaveLength(1);
+      expect(checks[0]?.ok).toBe(false);
+      expect(checks[0]?.detail).toContain('unknown tool');
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports an unreadable settings profile as a failed check instead of throwing', () => {
+    // Regression: a permissionsDir without t1.settings.json threw ENOENT out of doctor().
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      mkdirSync(join(projectDir, '.claude'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({ athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claude'] }),
+      );
+      writeFileSync(join(projectDir, '.claude', 'settings.json'), '{}\n');
+
+      const checks = doctor(projectDir, instructionsDir, join(projectDir, 'no-such-dir'));
+      const settingsCheck = checks.find((check) => check.name === '.claude/settings.json');
+
+      expect(settingsCheck?.ok).toBe(false);
+      expect(settingsCheck?.detail).toContain('cannot read expected profile');
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('still runs the hash-independent checks when the layer build fails', () => {
+    // Regression: doctor returned early after the layers FAIL, hiding the settings and
+    // task.yml state until the stack was fixed — one remediation pass became several.
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({
+          athenaVersion: 'v1',
+          stack: 'no-such-stack',
+          targets: [],
+          tools: ['claude'],
+        }),
+      );
+
+      const checks = doctor(projectDir, instructionsDir);
+      const names = checks.map((check) => check.name);
+
+      expect(names).toContain('layers');
+      expect(names).toContain('.claude/settings.json');
+      expect(names).toContain('.github/ISSUE_TEMPLATE/task.yml');
+      expect(names).not.toContain('CLAUDE.md');
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('reports a config whose tools field is not an array as a failed check', () => {
     // Regression: doctor used to throw a TypeError on config.tools.join.
     const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));

@@ -60,6 +60,13 @@ describe('compile', () => {
     expect(files['.claude/settings.json']).toBe(expected);
   });
 
+  it('rejects an unknown tool in config.tools instead of silently falling back', () => {
+    // Regression: a typo like "claud" used to compile "successfully" into the generic
+    // athena-system-prompt.md, leaving the repo with no CLAUDE.md and no error.
+    const typoConfig: AthenaConfig = { ...config, tools: ['claud'] };
+    expect(() => compile(typoConfig, inputs)).toThrow('unknown tool "claud"');
+  });
+
   it('merges layers in order with the project layer last', () => {
     const body = buildBody(config, instructionsDir, projectLayer);
     const order = [
