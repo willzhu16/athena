@@ -40,6 +40,9 @@ const MARKER = 'ATHENA-COMPILED';
 /** Tools compile knows how to emit files for. An unknown name is a config error, not a fallback. */
 export const KNOWN_TOOLS = ['claude', 'codex'] as const;
 
+/** The permission profile compile installs and doctor verifies — one name, two consumers. */
+export const SETTINGS_PROFILE = 't1.settings.json';
+
 /** Instruction layer filenames for a config, in canonical merge order (numeric prefix). */
 export const resolveLayers = (config: AthenaConfig): string[] => {
   const layers = ['00-universal.md', '10-security.md', `20-stack-${config.stack}.md`];
@@ -108,7 +111,7 @@ export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOu
     if (tool === 'claude') {
       files['CLAUDE.md'] = compiled;
       files['.claude/settings.json'] = readFileSync(
-        join(inputs.permissionsDir, 't1.settings.json'),
+        join(inputs.permissionsDir, SETTINGS_PROFILE),
         'utf8',
       );
     } else if (tool === 'codex') {
