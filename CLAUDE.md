@@ -1,0 +1,86 @@
+<!-- Hand-written repo guide. NOT an athena-compiled artifact (athena itself is not an
+     athena-managed project — `pnpm compile` with no args fails on purpose). Safe to edit. -->
+
+# athena — instruction compiler for agent-built repos
+
+Small TypeScript CLI, no build step, no runtime services. It compiles layered agent
+instructions into per-tool files (`CLAUDE.md`, `AGENTS.md`, `.claude/settings.json`) for
+*other* repos, and detects drift in those repos. Part of the Artemis workspace — if the
+parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-level rules
+(polyrepo layout, boundaries, `check.ps1`/`verify.ps1` gates).
+
+## The contract (what the code does)
+
+- `pnpm compile <projectDir>` (`compile.ts`) reads the target's `.athena/config.json`
+  (`{athenaVersion, stack, targets[], tools[]}`) and optional `.athena/project.md`, merges
+  instruction layers in a fixed order, and **writes into `<projectDir>`**:
+  - layers: `00-universal.md` + `10-security.md` + `20-stack-<stack>.md` + one
+    `30-target-<t>.md` per target + `project.md` last (`resolveLayers`, compile.ts:47).
+  - tool `claude` → `CLAUDE.md` + `.claude/settings.json` (verbatim copy of
+    `permissions/t1.settings.json`); tool `codex` → `AGENTS.md` (same body, no settings).
+  - every output starts with a one-line header:
+    `<!-- ATHENA-COMPILED <version> sha:<16-hex> — edit .athena/project.md ... -->`
+    where the sha is sha256 of the body, truncated to 16 chars — deterministic, no
+    timestamps. `compile()` itself is pure; `writeOutputs()` does the I/O.
+  - unknown tool in `config.tools` → throws (KNOWN_TOOLS = `['claude','codex']`,
+    compile.ts:41). No silent fallback — that's a regression guard, keep it.
+- `pnpm doctor <projectDir>` (`doctor.ts`) is read-only; prints `PASS|FAIL <name> — detail`
+  per check, exit 1 if any FAIL. There is no WARN tier. Checks: config present/parseable/
+  well-shaped (unknown tools fail here too, parity with compile), layers resolvable,
+  `CLAUDE.md`/`AGENTS.md` freshness, `.claude/settings.json` byte-equality vs the t1
+  profile, and presence of `.github/ISSUE_TEMPLATE/task.yml`.
+- **Freshness is hash-of-actual-body vs hash-of-recomputed-body** (doctor.ts:95) — it does
+  NOT trust the header's declared sha, so hand-edits below an intact header are caught.
+  Editing any instruction layer, permission profile, or the target's `project.md` makes
+  every downstream repo read as drifted until recompiled. That is by design.
+
+## Commands (script contract is frozen — see Boundaries)
+
+- `pnpm install --frozen-lockfile` · `pnpm typecheck` · `pnpm lint` (biome; prints a benign
+  `linter.recommended` deprecation info, exits 0) · `pnpm test` (vitest + coverage)
+- One file: `pnpm exec vitest run doctor.test.ts`
+- `pnpm compile <dir>` / `pnpm doctor <dir>` — never point compile at a repo you don't
+  intend to modify, and never at `../platform/templates/*` (it would dump rendered output
+  into jinja sources).
+
+## Map
+
+- `compile.ts`, `doctor.ts` — the whole product. Tests live flat at root next to the code
+  (`*.test.ts`); no `src/`, no `tests/`, no build (`tsx` runs TS directly).
+- `instructions/` — the six canonical layers. `instructions.test.ts` auto-discovers `*.md`
+  and enforces a **120-line cap per layer**. Valid `stack` values = existing
+  `20-stack-*.md` files (ts, python); valid `targets` = `30-target-*.md` (workers,
+  vscode-ext). Adding a file IS adding a valid config value.
+- `permissions/` — Claude Code permission tiers. t0 read-only, t1 standard author agent
+  (write + branch/PR + non-force push, no deploys/secrets), t2 = t1 + preview deploys.
+  **Only t1 is wired up** (`SETTINGS_PROFILE`, compile.ts:44); t0/t2 are unreferenced today.
+- `conductor.md`, `task-packet.md`, `review-protocol.md`, `FOREMAN-NOTES.md` — process docs
+  for multi-agent work (task packets, review rules, max-3-concurrency conductor pattern).
+  FOREMAN-NOTES is the parking lot for out-of-scope runtime ideas (D-17/D-28).
+- `.github/workflows/` — thin callers of `willzhu16/platform/.../{ci,security,codeql}.yml@v1`
+  plus `release-athena.yml` (release-please) and `update-major-tag.yml` (moves the `v1` tag).
+
+## Gotchas (verified 2026-07-11)
+
+- `package.json` says version 0.0.0 — release-please's `.release-please-manifest.json` is
+  the real version (1.1.1). Don't "fix" package.json.
+- doctor checks for `.github/ISSUE_TEMPLATE/task.yml` but compile never creates it — the
+  platform templates provide it in generated repos. A bare compile target will FAIL that
+  one check until the file exists.
+- The `review` field in `AthenaConfig` is typed but read by nothing — dead config.
+- Tool `codex` gets no permission profile; settings are claude-only.
+- `.gitattributes` forces LF everywhere; doctor's settings check is byte-exact, so CRLF
+  anywhere in `.claude/settings.json` or the profiles reads as drift. Keep LF.
+- Conventional commits enforced in CI by commitlint (`.commitlintrc.json`); branch names
+  for agent work follow `agent/<tool>/<task-slug>` per `00-universal.md`.
+
+## Boundaries
+
+- Frozen cross-repo contracts (breaking to rename, D-18): package scripts
+  `lint`/`typecheck`/`test`; CI check names `ci / lint|typecheck|test|commits`; plain
+  `vX.Y.Z` tag shape; the `ATHENA-COMPILED` header format that doctor parses.
+- Never push, tag, or create releases here — tags drive release-please and the moving `v1`
+  pin downstream repos consume. Never commit to `main`; feature branch + PR.
+- Every behavior change ships with a regression test that fails before the fix.
+- Do not add runtime components (queues, daemons, dashboards) — log the idea in
+  `FOREMAN-NOTES.md` instead. Do not raise the conductor concurrency cap (3).
