@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "compile": "tsx compile.ts",
-    "doctor": "tsx doctor.ts"
+    "doctor": "tsx doctor.ts",
+    "harness-lint": "tsx harness-lint.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",

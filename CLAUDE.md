@@ -29,6 +29,15 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   well-shaped (unknown tools fail here too, parity with compile), layers resolvable,
   `CLAUDE.md`/`AGENTS.md` freshness, `.claude/settings.json` byte-equality vs the t1
   profile, and presence of `.github/ISSUE_TEMPLATE/task.yml`.
+- `pnpm harness-lint` (`harness-lint.ts`) checks athena's own harness rather than a target
+  repo — deterministic and offline, no agent and no network. Checks: every claim in
+  `permissions/coherence.json` still holds (the layer states the command AND the named
+  profiles deny it, or the claim is marked `advisory` with a reason); every flag-bearing
+  deny rule carries a written acknowledgement (order-sensitive patterns are evadable —
+  REVIEW-2026-07-15 #7); the worst-case compiled bundle stays under `BUNDLE_TOKEN_BUDGET`
+  (4000, measured worst case 2852); and no rule line repeats inside one bundle. It also
+  prints three inventories that never fail: per-config bundle cost, rules echoed across
+  layers, and deny rules no layer explains (11 today).
 - **Freshness is hash-of-actual-body vs hash-of-recomputed-body** (doctor.ts:95) — it does
   NOT trust the header's declared sha, so hand-edits below an intact header are caught.
   Editing any instruction layer, permission profile, or the target's `project.md` makes
@@ -39,6 +48,7 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 - `pnpm install --frozen-lockfile` · `pnpm typecheck` · `pnpm lint` (biome; prints a benign
   `linter.recommended` deprecation info, exits 0) · `pnpm test` (vitest + coverage)
 - One file: `pnpm exec vitest run doctor.test.ts`
+- `pnpm harness-lint` — no arguments; always checks athena's own layers and profiles.
 - `pnpm compile <dir>` / `pnpm doctor <dir>` — never point compile at a repo you don't
   intend to modify, and never at `../platform/templates/*` (it would dump rendered output
   into jinja sources).
@@ -54,6 +64,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 - `permissions/` — Claude Code permission tiers. t0 read-only, t1 standard author agent
   (write + branch/PR + non-force push, no deploys/secrets), t2 = t1 + preview deploys.
   **Only t1 is wired up** (`SETTINGS_PROFILE`, compile.ts:44); t0/t2 are unreferenced today.
+  `coherence.json` sits beside them: the tested bridge between what the layers say and what
+  the profiles enforce, read only by `harness-lint.ts` (compile ignores it).
 - `conductor.md`, `task-packet.md`, `review-protocol.md`, `FOREMAN-NOTES.md` — process docs
   for multi-agent work (task packets, review rules, max-3-concurrency conductor pattern).
   FOREMAN-NOTES is the parking lot for out-of-scope runtime ideas (D-17/D-28).
