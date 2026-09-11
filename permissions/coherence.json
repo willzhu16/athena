@@ -1,0 +1,115 @@
+{
+  "note": "The tested bridge between the rulebook and the wall. Each claim names a command the instruction layers talk about and says whether a permission profile actually enforces it. harness-lint.ts asserts both halves, so a rule deleted from a layer or a deny removed from a profile fails a check instead of drifting silently.",
+  "claims": [
+    {
+      "command": "sops -d",
+      "statedIn": ["10-security.md"],
+      "enforcement": "denied",
+      "deniedIn": ["t0", "t1", "t2"]
+    },
+    {
+      "command": "sops --decrypt",
+      "statedIn": ["10-security.md"],
+      "enforcement": "denied",
+      "deniedIn": ["t0", "t1", "t2"]
+    },
+    {
+      "command": "gh secret",
+      "statedIn": ["10-security.md"],
+      "enforcement": "denied",
+      "deniedIn": ["t0", "t1", "t2"]
+    },
+    {
+      "command": "wrangler secret",
+      "statedIn": ["10-security.md", "30-target-workers.md"],
+      "enforcement": "denied",
+      "deniedIn": ["t0", "t1", "t2"]
+    },
+    {
+      "command": "wrangler deploy",
+      "statedIn": ["10-security.md"],
+      "enforcement": "denied",
+      "deniedIn": ["t0", "t1", "t2"]
+    },
+    {
+      "command": "tofu apply",
+      "statedIn": ["10-security.md"],
+      "enforcement": "denied",
+      "deniedIn": ["t0", "t1", "t2"]
+    },
+    {
+      "command": ".github/workflows/",
+      "statedIn": ["10-security.md"],
+      "enforcement": "advisory",
+      "reason": "The layer permits workflow edits when the task packet asks for them, so a hard deny would block legitimate work. CI review of the diff is the control."
+    },
+    {
+      "command": "wrangler.jsonc",
+      "statedIn": ["10-security.md", "30-target-workers.md"],
+      "enforcement": "advisory",
+      "reason": "Same conditional shape as the workflow rule: binding changes are allowed when the packet says so, so this is reviewed rather than walled."
+    }
+  ],
+  "acknowledgedUnsoundDenies": [
+    {
+      "profile": "t0",
+      "rule": "Bash(sops -d:*)",
+      "reason": "Flag-bearing deny. Kept because the paired sops --decrypt deny covers the long form, and t0 denies all writes anyway."
+    },
+    {
+      "profile": "t0",
+      "rule": "Bash(sops --decrypt:*)",
+      "reason": "Flag-bearing deny. Paired with the short form above; both are listed so neither spelling is missed."
+    },
+    {
+      "profile": "t1",
+      "rule": "Bash(sops -d:*)",
+      "reason": "Flag-bearing deny. Paired with sops --decrypt and sops exec-env, which is order-insensitive."
+    },
+    {
+      "profile": "t1",
+      "rule": "Bash(sops --decrypt:*)",
+      "reason": "Flag-bearing deny. Paired with the short form above."
+    },
+    {
+      "profile": "t1",
+      "rule": "Bash(git push --force:*)",
+      "reason": "REVIEW-2026-07-15 finding #7: a flag placed after positional arguments (git push origin main --force) is not matched. Acknowledged, not fixed — editing this profile drifts every generated repo, so the fix is its own change. The branch ruleset (non_fast_forward) is the real control."
+    },
+    {
+      "profile": "t1",
+      "rule": "Bash(git push -f:*)",
+      "reason": "Same hole as the long form above; see that entry."
+    },
+    {
+      "profile": "t1",
+      "rule": "Bash(git push --force-with-lease:*)",
+      "reason": "Same hole as the long form above; see that entry."
+    },
+    {
+      "profile": "t2",
+      "rule": "Bash(sops -d:*)",
+      "reason": "t2 inherits t1's deny list; see the t1 entry."
+    },
+    {
+      "profile": "t2",
+      "rule": "Bash(sops --decrypt:*)",
+      "reason": "t2 inherits t1's deny list; see the t1 entry."
+    },
+    {
+      "profile": "t2",
+      "rule": "Bash(git push --force:*)",
+      "reason": "t2 inherits t1's deny list; see the t1 entry."
+    },
+    {
+      "profile": "t2",
+      "rule": "Bash(git push -f:*)",
+      "reason": "t2 inherits t1's deny list; see the t1 entry."
+    },
+    {
+      "profile": "t2",
+      "rule": "Bash(git push --force-with-lease:*)",
+      "reason": "t2 inherits t1's deny list; see the t1 entry."
+    }
+  ]
+}
