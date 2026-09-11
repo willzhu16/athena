@@ -26,6 +26,7 @@ export interface AthenaConfig {
 export interface CompileInputs {
   instructionsDir: string;
   permissionsDir: string;
+  commandsDir: string;
   projectLayer: string;
 }
 
@@ -42,6 +43,13 @@ export const KNOWN_TOOLS = ['claude', 'codex'] as const;
 
 /** The permission profile compile installs and doctor verifies — one name, two consumers. */
 export const SETTINGS_PROFILE = 't1.settings.json';
+
+/**
+ * Slash commands compile installs verbatim into `.claude/commands/` and doctor verifies.
+ * Shipping a pattern as a command is what makes it reachable; a process doc in the athena
+ * repo is not something an agent working in a generated repo will ever find.
+ */
+export const COMMANDS = ['conductor.md'] as const;
 
 /** Instruction layer filenames for a config, in canonical merge order (numeric prefix). */
 export const resolveLayers = (config: AthenaConfig): string[] => {
@@ -114,6 +122,12 @@ export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOu
         join(inputs.permissionsDir, SETTINGS_PROFILE),
         'utf8',
       );
+      for (const command of COMMANDS) {
+        files[`.claude/commands/${command}`] = readFileSync(
+          join(inputs.commandsDir, command),
+          'utf8',
+        );
+      }
     } else if (tool === 'codex') {
       files['AGENTS.md'] = compiled;
     }
@@ -147,6 +161,7 @@ const main = (): void => {
   const outputs = compile(readConfig(projectDir), {
     instructionsDir: join(athenaDir, 'instructions'),
     permissionsDir: join(athenaDir, 'permissions'),
+    commandsDir: join(athenaDir, 'commands'),
     projectLayer: readProjectLayer(projectDir),
   });
   const written = writeOutputs(projectDir, outputs);

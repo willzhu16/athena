@@ -17,7 +17,9 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   - layers: `00-universal.md` + `10-security.md` + `20-stack-<stack>.md` + one
     `30-target-<t>.md` per target + `project.md` last (`resolveLayers`, compile.ts:47).
   - tool `claude` → `CLAUDE.md` + `.claude/settings.json` (verbatim copy of
-    `permissions/t1.settings.json`); tool `codex` → `AGENTS.md` (same body, no settings).
+    `permissions/t1.settings.json`) + one `.claude/commands/<name>.md` per entry in
+    `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`);
+    tool `codex` → `AGENTS.md` (same body, no settings and no commands).
   - every output starts with a one-line header:
     `<!-- ATHENA-COMPILED <version> sha:<16-hex> — edit .athena/project.md ... -->`
     where the sha is sha256 of the body, truncated to 16 chars — deterministic, no
@@ -66,6 +68,10 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   **Only t1 is wired up** (`SETTINGS_PROFILE`, compile.ts:44); t0/t2 are unreferenced today.
   `coherence.json` sits beside them: the tested bridge between what the layers say and what
   the profiles enforce, read only by `harness-lint.ts` (compile ignores it).
+- `commands/` — slash commands compile installs verbatim into `.claude/commands/` of every
+  claude-enabled repo (`COMMANDS`, compile.ts). Currently just `conductor.md`. Byte-exact
+  like the permission profile: doctor reports a local edit as drift. This is the
+  operational twin of the `conductor.md` process doc at the repo root — edit both.
 - `conductor.md`, `task-packet.md`, `review-protocol.md`, `FOREMAN-NOTES.md` — process docs
   for multi-agent work (task packets, review rules, max-3-concurrency conductor pattern).
   FOREMAN-NOTES is the parking lot for out-of-scope runtime ideas (D-17/D-28).
@@ -80,9 +86,10 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   platform templates provide it in generated repos. A bare compile target will FAIL that
   one check until the file exists.
 - The `review` field in `AthenaConfig` is typed but read by nothing — dead config.
-- Tool `codex` gets no permission profile; settings are claude-only.
-- `.gitattributes` forces LF everywhere; doctor's settings check is byte-exact, so CRLF
-  anywhere in `.claude/settings.json` or the profiles reads as drift. Keep LF.
+- Tool `codex` gets no permission profile and no commands; both are claude-only.
+- `.gitattributes` forces LF everywhere; doctor's verbatim checks are byte-exact, so CRLF
+  anywhere in `.claude/settings.json`, `.claude/commands/*`, the profiles or `commands/`
+  reads as drift. Keep LF.
 - Conventional commits enforced in CI by commitlint (`.commitlintrc.json`); branch names
   for agent work follow `agent/<tool>/<task-slug>` per `00-universal.md`.
 

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   type AthenaConfig,
   buildBody,
+  COMMANDS,
   computeHash,
   extractBody,
   KNOWN_TOOLS,
@@ -60,30 +61,39 @@ const presenceCheck = (projectDir: string, file: string): Check => {
   return { name: file, ok, detail: ok ? 'present' : 'missing' };
 };
 
-const settingsProfileCheck = (projectDir: string, permissionsDir: string): Check => {
-  const path = join(projectDir, '.claude', 'settings.json');
+/**
+ * Byte-exact check for a file athena installs verbatim — no header, no hash. Covers the
+ * permission profile and the shipped slash commands. Byte-exact on purpose: a reformatted
+ * settings file is still drift from the profile doctor is asserting.
+ */
+const verbatimCheck = (
+  projectDir: string,
+  relativePath: string,
+  sourcePath: string,
+  label: string,
+): Check => {
+  const path = join(projectDir, relativePath);
   if (!existsSync(path)) {
-    return { name: '.claude/settings.json', ok: false, detail: 'missing — run `athena compile`' };
+    return { name: relativePath, ok: false, detail: 'missing — run `athena compile`' };
   }
 
   let expected: string;
   try {
-    expected = readFileSync(join(permissionsDir, SETTINGS_PROFILE), 'utf8');
+    expected = readFileSync(sourcePath, 'utf8');
   } catch (error) {
-    // A missing/unreadable profile is an athena-side problem, but it still must surface
-    // as a FAIL check — doctor reports, it never crashes.
+    // An unreadable source is an athena-side problem, but it still must surface as a FAIL
+    // check — doctor reports, it never crashes.
     return {
-      name: '.claude/settings.json',
+      name: relativePath,
       ok: false,
-      detail: `cannot read expected profile ${SETTINGS_PROFILE}: ${(error as Error).message}`,
+      detail: `cannot read expected source ${label}: ${(error as Error).message}`,
     };
   }
-  const actual = readFileSync(path, 'utf8');
-  const ok = actual === expected;
+  const ok = readFileSync(path, 'utf8') === expected;
   return {
-    name: '.claude/settings.json',
+    name: relativePath,
     ok,
-    detail: ok ? 'matches t1 profile' : 'content differs from t1 settings profile',
+    detail: ok ? `matches ${label}` : `content differs from ${label}`,
   };
 };
 
@@ -117,6 +127,7 @@ export const doctor = (
   projectDir: string,
   instructionsDir: string,
   permissionsDir?: string,
+  commandsDir?: string,
 ): Check[] => {
   if (!existsSync(join(projectDir, '.athena', 'config.json'))) {
     return [{ name: 'config', ok: false, detail: '.athena/config.json missing' }];
@@ -143,13 +154,31 @@ export const doctor = (
     // so one report shows everything wrong instead of revealing failures one fix at a time.
     checks.push({ name: 'layers', ok: false, detail: (error as Error).message });
   }
-  const resolvedPermissionsDir =
-    permissionsDir ?? join(dirname(fileURLToPath(import.meta.url)), 'permissions');
+  const athenaRoot = dirname(fileURLToPath(import.meta.url));
+  const resolvedPermissionsDir = permissionsDir ?? join(athenaRoot, 'permissions');
+  const resolvedCommandsDir = commandsDir ?? join(athenaRoot, 'commands');
   if (config.tools.includes('claude')) {
     if (expectedHash !== null) {
       checks.push(freshnessCheck(projectDir, 'CLAUDE.md', expectedHash));
     }
-    checks.push(settingsProfileCheck(projectDir, resolvedPermissionsDir));
+    checks.push(
+      verbatimCheck(
+        projectDir,
+        '.claude/settings.json',
+        join(resolvedPermissionsDir, SETTINGS_PROFILE),
+        't1 profile',
+      ),
+    );
+    for (const command of COMMANDS) {
+      checks.push(
+        verbatimCheck(
+          projectDir,
+          `.claude/commands/${command}`,
+          join(resolvedCommandsDir, command),
+          `the ${command.replace(/\.md$/, '')} command`,
+        ),
+      );
+    }
   }
   if (config.tools.includes('codex') && expectedHash !== null) {
     checks.push(freshnessCheck(projectDir, 'AGENTS.md', expectedHash));

@@ -88,7 +88,7 @@ describe('doctor (config problems become failed checks, never crashes)', () => {
       const settingsCheck = checks.find((check) => check.name === '.claude/settings.json');
 
       expect(settingsCheck?.ok).toBe(false);
-      expect(settingsCheck?.detail).toContain('cannot read expected profile');
+      expect(settingsCheck?.detail).toContain('cannot read expected source');
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
@@ -191,6 +191,36 @@ describe('doctor', () => {
       const settingsCheck = checks.find((check) => check.name === '.claude/settings.json');
 
       expect(settingsCheck?.ok).toBe(false);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a hand-edited conductor command as drift', () => {
+    // The command ships verbatim like the settings profile, so a local edit must read as
+    // drift instead of quietly becoming that repo's private version of the pattern.
+    const athenaDir = dirname(fileURLToPath(import.meta.url));
+    const instructionsDir = join(athenaDir, 'instructions');
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));
+
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      mkdirSync(join(projectDir, '.claude', 'commands'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({ athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claude'] }),
+      );
+      writeFileSync(
+        join(projectDir, '.claude', 'commands', 'conductor.md'),
+        '# not the shipped command\n',
+      );
+
+      const check = doctor(projectDir, instructionsDir).find(
+        (candidate) => candidate.name === '.claude/commands/conductor.md',
+      );
+
+      expect(check?.ok).toBe(false);
+      expect(check?.detail).toContain('content differs');
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }

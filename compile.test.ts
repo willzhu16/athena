@@ -15,6 +15,7 @@ import {
 const athenaDir = dirname(fileURLToPath(import.meta.url));
 const instructionsDir = join(athenaDir, 'instructions');
 const permissionsDir = join(athenaDir, 'permissions');
+const commandsDir = join(athenaDir, 'commands');
 
 const config: AthenaConfig = {
   athenaVersion: 'v1',
@@ -24,7 +25,7 @@ const config: AthenaConfig = {
   review: { enabled: false, reviewer: 'claude' },
 };
 const projectLayer = '# Project layer\n\nProject-specific note.\n';
-const inputs = { instructionsDir, permissionsDir, projectLayer };
+const inputs = { instructionsDir, permissionsDir, commandsDir, projectLayer };
 
 describe('resolveLayers', () => {
   it('orders layers by numeric prefix with targets after the stack', () => {
@@ -45,6 +46,20 @@ describe('compile', () => {
   it('emits matching CLAUDE.md and AGENTS.md bodies', () => {
     const { files } = compile(config, inputs);
     expect(files['CLAUDE.md']).toBe(files['AGENTS.md']);
+  });
+
+  it('installs the conductor command verbatim for the claude tool', () => {
+    // The pattern is only reachable if it ships as a command; a process doc in the athena
+    // repo is not something an agent working in a generated repo will ever find.
+    const { files } = compile(config, inputs);
+    expect(files['.claude/commands/conductor.md']).toBe(
+      readFileSync(join(commandsDir, 'conductor.md'), 'utf8'),
+    );
+  });
+
+  it('ships no commands or settings to a codex-only project', () => {
+    const { files } = compile({ ...config, tools: ['codex'] }, inputs);
+    expect(Object.keys(files)).toEqual(['AGENTS.md']);
   });
 
   it('carries a footer hash that matches the compiled body', () => {
