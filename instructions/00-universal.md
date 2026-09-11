@@ -17,6 +17,9 @@ Applies to every repo and every tool.
   own tools this session is an assumption — check it before relying on it.
 - Match the surrounding code: naming, file placement, error handling, style. New code
   should read like the same author wrote it. Never import conventions from other projects.
+- Document what is, not what is intended. Before writing that something is required,
+  wired, enforced, or consumed by X, check that it is. An aspirational comment reads
+  exactly like a true one to whoever comes next, and agents believe both.
 
 ## Definition of done
 
