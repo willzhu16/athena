@@ -1,9 +1,12 @@
 # Conductor mode
 
 The pre-Foreman pattern (D-28): "put a spec out, several agents each take a task" — with
-**zero new runtime**, using Claude Code's built-in subagents and git worktrees. Shipped
-into projects as a `.claude/commands/` entry. Conductor mode changes *dispatch*, never the
-rules: every worker follows standard T1 rules and every gate still runs.
+**zero new runtime**, using Claude Code's built-in subagents and git worktrees. This file
+is the human-readable protocol; `commands/conductor.md` is the operational version that
+compile installs into every claude-enabled repo as `.claude/commands/conductor.md`, so the
+pattern is reachable as `/conductor` rather than only readable here. Keep the two in step.
+Conductor mode changes *dispatch*, never the rules: every worker follows standard T1 rules
+and every gate still runs.
 
 ## Protocol
 

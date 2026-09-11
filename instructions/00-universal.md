@@ -1,8 +1,6 @@
 # Universal working rules
 
-Applies to every repo and every tool. This is the canonical source — it is compiled into
-CLAUDE.md / AGENTS.md, never read directly. Keep it short; link to the handbook rather
-than restating it.
+Applies to every repo and every tool.
 
 ## Scope discipline
 
@@ -19,6 +17,19 @@ than restating it.
   own tools this session is an assumption — check it before relying on it.
 - Match the surrounding code: naming, file placement, error handling, style. New code
   should read like the same author wrote it. Never import conventions from other projects.
+- Document what is, not what is intended. Before writing that something is required,
+  wired, enforced, or consumed by X, check that it is. An aspirational comment reads
+  exactly like a true one to whoever comes next, and agents believe both.
+
+## Reading command output
+
+- Bound what you pull into context. Pipe long command and log output through `tail`,
+  `head`, or a filter with a limit rather than reading it whole, and widen the window only
+  when the bounded read fails to answer the question. Most of a build log is noise; the
+  last twenty lines usually are not.
+- **Never conclude something is absent from a bounded read.** A truncated search says
+  nothing about what it truncated. To establish that something does not exist, count the
+  matches or narrow the path searched — and say which you did.
 
 ## Definition of done
 
@@ -32,6 +43,17 @@ Done means every item in the handbook definition-of-done, in particular:
   commented-out code, or stray TODOs left in the diff.
 
 See `platform/handbook/definition-of-done.md`.
+
+## Tests come first
+
+- Write the test before the implementation. For a bug, it must fail for the right reason
+  before you touch the code; for a feature, state the expectation and watch it go red
+  first. A test written afterwards records what the code does, not what it should do.
+- Name a test by the behaviour it pins down, never by the function under test:
+  `rejects an expired token`, not `tests validate()`. Read in order, a file's test names
+  should read as that module's specification.
+- A test that has never failed has proven nothing. If it passed before your change, it is
+  not covering your change — make it fail on purpose once before you trust it.
 
 ## Honesty
 
@@ -65,3 +87,16 @@ the audit trail and the input to improving these layers:
 Tool/model: … | Packet: #NN
 Tried: … | Dead ends: … | Decisions made and why: …
 ```
+
+## Changing these instructions
+
+This file is compiled output, not a source. It is rebuilt from shared layers in the
+`athena` repo plus this repo's `.athena/project.md`, and the weekly sync job reverts any
+hand-edit — editing CLAUDE.md or AGENTS.md directly never survives.
+
+- A rule for this project only → edit `.athena/project.md` here.
+- A rule every project should follow → edit the matching layer in `athena`
+  (`00-universal`, `10-security`, `20-stack-*`, `30-target-*`) and open a PR there.
+  Keep layers short; link to the handbook rather than restating it.
+- Rebuild after either change: `pnpm compile <path to this repo>` from an `athena`
+  checkout. A source edited without recompiling leaves this file stale until the sync runs.
