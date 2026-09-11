@@ -21,6 +21,16 @@ Applies to every repo and every tool.
   wired, enforced, or consumed by X, check that it is. An aspirational comment reads
   exactly like a true one to whoever comes next, and agents believe both.
 
+## Reading command output
+
+- Bound what you pull into context. Pipe long command and log output through `tail`,
+  `head`, or a filter with a limit rather than reading it whole, and widen the window only
+  when the bounded read fails to answer the question. Most of a build log is noise; the
+  last twenty lines usually are not.
+- **Never conclude something is absent from a bounded read.** A truncated search says
+  nothing about what it truncated. To establish that something does not exist, count the
+  matches or narrow the path searched — and say which you did.
+
 ## Definition of done
 
 Done means every item in the handbook definition-of-done, in particular:
