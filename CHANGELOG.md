@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/willzhu16/athena/compare/v1.1.1...v1.2.0) (2026-09-11)
+
+
+### Features
+
+* **harness:** add harness-lint for rule and profile coherence ([#7](https://github.com/willzhu16/athena/issues/7)) ([79b5ac1](https://github.com/willzhu16/athena/commit/79b5ac1c741aaa0fcd6880051c0b5f3a020659ff))
+* **instructions:** explain the harness to agents and ship /conductor ([#8](https://github.com/willzhu16/athena/issues/8)) ([c2a3bd2](https://github.com/willzhu16/athena/commit/c2a3bd25828d300bbff56ac158956dd8395c8f35))
+
+
+### Bug Fixes
+
+* **deps:** bump devDependencies to clear 6 osv advisories ([#9](https://github.com/willzhu16/athena/issues/9)) ([8f85de2](https://github.com/willzhu16/athena/commit/8f85de2fc42291ebf9789537b4ad0b363df1a8ec))
+
 ## [1.1.1](https://github.com/willzhu16/athena/compare/v1.1.0...v1.1.1) (2026-07-11)
 
 
