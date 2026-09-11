@@ -31,6 +31,17 @@ Done means every item in the handbook definition-of-done, in particular:
 
 See `platform/handbook/definition-of-done.md`.
 
+## Tests come first
+
+- Write the test before the implementation. For a bug, it must fail for the right reason
+  before you touch the code; for a feature, state the expectation and watch it go red
+  first. A test written afterwards records what the code does, not what it should do.
+- Name a test by the behaviour it pins down, never by the function under test:
+  `rejects an expired token`, not `tests validate()`. Read in order, a file's test names
+  should read as that module's specification.
+- A test that has never failed has proven nothing. If it passed before your change, it is
+  not covering your change — make it fail on purpose once before you trust it.
+
 ## Honesty
 
 - Report failures plainly. Never claim something works that you have not run.
