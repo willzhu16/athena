@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/willzhu16/athena/compare/v1.2.0...v1.3.0) (2026-09-11)
+
+
+### Features
+
+* **release:** let the release PR run its own checks via AUTOMATION_TOKEN ([#11](https://github.com/willzhu16/athena/issues/11)) ([5b2203c](https://github.com/willzhu16/athena/commit/5b2203cf34fcd1e2b578e331247f0148f0cc7dd0))
+
 ## [1.2.0](https://github.com/willzhu16/athena/compare/v1.1.1...v1.2.0) (2026-09-11)
 
 
