@@ -7,8 +7,8 @@ import {
   COMMANDS,
   computeHash,
   extractBody,
-  KNOWN_TOOLS,
   SETTINGS_PROFILE,
+  validateConfig,
 } from './compile.ts';
 
 /**
@@ -30,30 +30,6 @@ const readConfig = (projectDir: string): AthenaConfig =>
 const readProjectLayer = (projectDir: string): string => {
   const path = join(projectDir, '.athena', 'project.md');
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
-};
-
-/**
- * Reject configs that parse as JSON but do not have the AthenaConfig shape. Doctor's
- * whole job is reporting, so a malformed field must become a FAIL check downstream
- * instead of a TypeError here.
- */
-const configShapeError = (config: AthenaConfig): string | null => {
-  if (typeof config.stack !== 'string' || config.stack === '') {
-    return 'invalid: "stack" must be a non-empty string';
-  }
-  if (!Array.isArray(config.targets)) {
-    return 'invalid: "targets" must be an array';
-  }
-  if (!Array.isArray(config.tools)) {
-    return 'invalid: "tools" must be an array';
-  }
-  // Parity with compile: a tool name compile would reject must not pass doctor, or a
-  // typo like "claud" silently disables every instruction-file check.
-  const unknown = config.tools.filter((tool) => !(KNOWN_TOOLS as readonly string[]).includes(tool));
-  if (unknown.length > 0) {
-    return `invalid: unknown tool(s) ${unknown.join(', ')} — known tools: ${KNOWN_TOOLS.join(', ')}`;
-  }
-  return null;
 };
 
 const presenceCheck = (projectDir: string, file: string): Check => {
@@ -135,12 +111,9 @@ export const doctor = (
   let config: AthenaConfig;
   try {
     config = readConfig(projectDir);
+    validateConfig(config);
   } catch (error) {
-    return [{ name: 'config', ok: false, detail: `unparseable: ${(error as Error).message}` }];
-  }
-  const shapeError = configShapeError(config);
-  if (shapeError) {
-    return [{ name: 'config', ok: false, detail: shapeError }];
+    return [{ name: 'config', ok: false, detail: (error as Error).message }];
   }
   const checks: Check[] = [
     { name: 'config', ok: true, detail: `stack=${config.stack} tools=${config.tools.join(',')}` },

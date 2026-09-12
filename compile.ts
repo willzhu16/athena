@@ -51,6 +51,39 @@ export const SETTINGS_PROFILE = 't1.settings.json';
  */
 export const COMMANDS = ['conductor.md'] as const;
 
+/** Validate untrusted JSON before either CLI reads fields or constructs layer paths. */
+export function validateConfig(value: unknown): asserts value is AthenaConfig {
+  const fail = (detail: string): never => {
+    throw new Error(`athena: invalid config — ${detail}`);
+  };
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    fail('must be an object');
+  }
+  const config = value as Record<string, unknown>;
+  if (typeof config.athenaVersion !== 'string' || !/^[^\s<>]+$/.test(config.athenaVersion)) {
+    fail('"athenaVersion" must be a non-empty header token');
+  }
+  const layerName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  if (typeof config.stack !== 'string' || !layerName.test(config.stack)) {
+    fail('"stack" must be a layer identifier');
+  }
+  if (!Array.isArray(config.targets)) fail('"targets" must be an array');
+  const targets = config.targets as unknown[];
+  if (targets.some((target) => typeof target !== 'string' || !layerName.test(target))) {
+    fail('"targets" must contain layer identifiers');
+  }
+  if (new Set(targets).size !== targets.length) fail('"targets" must be unique');
+  if (!Array.isArray(config.tools)) fail('"tools" must be an array');
+  const tools = config.tools as unknown[];
+  if (tools.length === 0) fail('"tools" must contain at least one tool');
+  for (const tool of tools) {
+    if (typeof tool !== 'string' || !(KNOWN_TOOLS as readonly string[]).includes(tool)) {
+      fail(`unknown tool "${String(tool)}" — known tools: ${KNOWN_TOOLS.join(', ')}`);
+    }
+  }
+  if (new Set(tools).size !== tools.length) fail('"tools" must be unique');
+}
+
 /** Instruction layer filenames for a config, in canonical merge order (numeric prefix). */
 export const resolveLayers = (config: AthenaConfig): string[] => {
   const layers = ['00-universal.md', '10-security.md', `20-stack-${config.stack}.md`];
@@ -104,13 +137,7 @@ export const readDeclaredHash = (compiled: string): string | null => {
 
 /** Produce every output file's contents for a config. Pure: performs no filesystem writes. */
 export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOutputs => {
-  for (const tool of config.tools) {
-    if (!(KNOWN_TOOLS as readonly string[]).includes(tool)) {
-      throw new Error(
-        `athena: unknown tool "${tool}" in config.tools — known tools: ${KNOWN_TOOLS.join(', ')}`,
-      );
-    }
-  }
+  validateConfig(config);
   const body = buildBody(config, inputs.instructionsDir, inputs.projectLayer);
   const hash = computeHash(body);
   const compiled = render(config, body, hash);

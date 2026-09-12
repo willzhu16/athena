@@ -68,9 +68,8 @@ export interface HarnessReport {
 }
 
 /**
- * Estimated-token ceiling for the layer bundle one repo loads on every request. Measured
- * worst case on 2026-09-11 was ~2852 (ts + both targets); this leaves deliberate headroom
- * so growth is a decision rather than an accident.
+ * Estimated-token ceiling for the shared layer bundle. Run harness-lint for current
+ * measurements; project instructions, skills and tool output are outside this budget.
  */
 export const BUNDLE_TOKEN_BUDGET = 4000;
 
@@ -302,9 +301,14 @@ const denyState = (
   } catch {
     return 'missing';
   }
-  const denied = profile.permissions.deny.some((rule) =>
-    (bashCommand(rule) ?? '').startsWith(command),
-  );
+  // Claims describe command families, not one exact invocation. A narrower subcommand
+  // or an exact-only deny cannot cover that family. Deliberately do not guess at complex
+  // globs: this proves direct prefix coverage, not runtime isolation or all spellings.
+  const denied = profile.permissions.deny.some((rule) => {
+    if (rule === 'Bash' || rule === 'Bash(*)') return true;
+    const prefix = rule.match(/^Bash\(([^*]+?)(?::\*| \*)\)$/)?.[1];
+    return prefix !== undefined && (command === prefix || command.startsWith(`${prefix} `));
+  });
   return denied ? 'denied' : 'open';
 };
 
@@ -314,6 +318,9 @@ const claimFinding = (
   permissionsDir: string,
 ): Finding => {
   const name = `claim ${claim.command}`;
+  if (!claim.command?.trim() || !Array.isArray(claim.statedIn) || claim.statedIn.length === 0) {
+    return { name, ok: false, detail: 'claim needs a command and at least one source layer' };
+  }
   const unstated = claim.statedIn.filter(
     (layer) => !statesCommand(instructionsDir, layer, claim.command),
   );
@@ -321,7 +328,7 @@ const claimFinding = (
     return { name, ok: false, detail: `no longer stated in ${unstated.join(', ')}` };
   }
   if (claim.enforcement === 'advisory') {
-    const ok = (claim.reason ?? '').length > 0;
+    const ok = (claim.reason ?? '').trim().length > 0;
     return {
       name,
       ok,
@@ -331,6 +338,9 @@ const claimFinding = (
     };
   }
   const tiers = claim.deniedIn ?? [];
+  if (claim.enforcement !== 'denied' || !Array.isArray(tiers) || tiers.length === 0) {
+    return { name, ok: false, detail: 'denied claim needs at least one permission profile' };
+  }
   const states = tiers.map((tier) => ({
     tier,
     state: denyState(permissionsDir, tier, claim.command),
@@ -347,7 +357,9 @@ const claimFinding = (
     name,
     ok: problems.length === 0,
     detail:
-      problems.length === 0 ? `stated and denied in ${tiers.join(', ')}` : problems.join('; '),
+      problems.length === 0
+        ? `stated; direct prefix denied in ${tiers.join(', ')}`
+        : problems.join('; '),
   };
 };
 
@@ -377,8 +389,43 @@ export const unclaimedDenies = (permissionsDir: string, claims: CoherenceClaim[]
   });
 };
 
-export const readCoherence = (permissionsDir: string): CoherenceFile =>
-  JSON.parse(readFileSync(join(permissionsDir, COHERENCE_FILE), 'utf8')) as CoherenceFile;
+export const readCoherence = (permissionsDir: string): CoherenceFile => {
+  const value = JSON.parse(readFileSync(join(permissionsDir, COHERENCE_FILE), 'utf8'));
+  if (
+    !value ||
+    !Array.isArray(value.claims) ||
+    value.claims.length === 0 ||
+    !Array.isArray(value.acknowledgedUnsoundDenies)
+  ) {
+    throw new Error('manifest needs non-empty claims and an acknowledgedUnsoundDenies array');
+  }
+  const nonemptyStrings = (items: unknown): items is string[] =>
+    Array.isArray(items) &&
+    items.length > 0 &&
+    items.every((item) => typeof item === 'string' && item.trim().length > 0);
+  for (const claim of value.claims) {
+    if (
+      !claim ||
+      typeof claim.command !== 'string' ||
+      !claim.command.trim() ||
+      !nonemptyStrings(claim.statedIn) ||
+      (claim.enforcement !== 'denied' && claim.enforcement !== 'advisory') ||
+      (claim.enforcement === 'denied' && !nonemptyStrings(claim.deniedIn)) ||
+      (claim.enforcement === 'advisory' &&
+        (typeof claim.reason !== 'string' || !claim.reason.trim()))
+    ) {
+      throw new Error(
+        'invalid coherence claim: command, source layers and enforcement are required',
+      );
+    }
+  }
+  for (const entry of value.acknowledgedUnsoundDenies) {
+    if (!entry || !nonemptyStrings([entry.profile, entry.rule, entry.reason])) {
+      throw new Error('invalid deny acknowledgement: profile, rule and reason are required');
+    }
+  }
+  return value as CoherenceFile;
+};
 
 /** Run every harness check. Pure reporting: a broken manifest fails a check, never throws. */
 export const harnessLint = (instructionsDir: string, permissionsDir: string): HarnessReport => {

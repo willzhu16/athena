@@ -42,7 +42,7 @@ jobs:
             echo "::error::'$RAW_TAG' is not a vX.Y.Z release tag"
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ steps.tag.outputs.tag }}
       - name: Move major tag

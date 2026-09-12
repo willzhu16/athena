@@ -15,17 +15,20 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   (`{athenaVersion, stack, targets[], tools[]}`) and optional `.athena/project.md`, merges
   instruction layers in a fixed order, and **writes into `<projectDir>`**:
   - layers: `00-universal.md` + `10-security.md` + `20-stack-<stack>.md` + one
-    `30-target-<t>.md` per target + `project.md` last (`resolveLayers`, compile.ts:47).
+    `30-target-<t>.md` per target + `project.md` last (`resolveLayers` in compile.ts).
   - tool `claude` → `CLAUDE.md` + `.claude/settings.json` (verbatim copy of
     `permissions/t1.settings.json`) + one `.claude/commands/<name>.md` per entry in
     `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`);
     tool `codex` → `AGENTS.md` (same body, no settings and no commands).
-  - every output starts with a one-line header:
+  - each instruction output (CLAUDE.md / AGENTS.md) starts with a one-line header:
     `<!-- ATHENA-COMPILED <version> sha:<16-hex> — edit .athena/project.md ... -->`
     where the sha is sha256 of the body, truncated to 16 chars — deterministic, no
     timestamps. `compile()` itself is pure; `writeOutputs()` does the I/O.
+  - `validateConfig` is shared with doctor: JSON must be an object, version a non-empty
+    header token, stack/targets simple layer identifiers, and tools a non-empty known
+    list. Duplicate targets/tools and path-like layer names are rejected.
   - unknown tool in `config.tools` → throws (KNOWN_TOOLS = `['claude','codex']`,
-    compile.ts:41). No silent fallback — that's a regression guard, keep it.
+    compile.ts). No silent fallback — that's a regression guard, keep it.
 - `pnpm doctor <projectDir>` (`doctor.ts`) is read-only; prints `PASS|FAIL <name> — detail`
   per check, exit 1 if any FAIL. There is no WARN tier. Checks: config present/parseable/
   well-shaped (unknown tools fail here too, parity with compile), layers resolvable,
@@ -34,13 +37,15 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 - `pnpm harness-lint` (`harness-lint.ts`) checks athena's own harness rather than a target
   repo — deterministic and offline, no agent and no network. Checks: every claim in
   `permissions/coherence.json` still holds (the layer states the command AND the named
-  profiles deny it, or the claim is marked `advisory` with a reason); every flag-bearing
+  profiles cover that direct command prefix, or the claim is marked `advisory` with a
+  reason); every flag-bearing
   deny rule carries a written acknowledgement (order-sensitive patterns are evadable —
   REVIEW-2026-07-15 #7); the worst-case compiled bundle stays under `BUNDLE_TOKEN_BUDGET`
-  (4000, measured worst case 2852); and no rule line repeats inside one bundle. It also
+  (4000; run harness-lint for the current estimate); and no rule line repeats inside one
+  bundle. It also
   prints three inventories that never fail: per-config bundle cost, rules echoed across
   layers, and deny rules no layer explains (11 today).
-- **Freshness is hash-of-actual-body vs hash-of-recomputed-body** (doctor.ts:95) — it does
+- **Freshness is hash-of-actual-body vs hash-of-recomputed-body** (isFresh in doctor.ts) — it does
   NOT trust the header's declared sha, so hand-edits below an intact header are caught.
   Editing any instruction layer, permission profile, or the target's `project.md` makes
   every downstream repo read as drifted until recompiled. That is by design.
@@ -63,11 +68,13 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   and enforces a **120-line cap per layer**. Valid `stack` values = existing
   `20-stack-*.md` files (ts, python); valid `targets` = `30-target-*.md` (workers,
   vscode-ext). Adding a file IS adding a valid config value.
-- `permissions/` — Claude Code permission tiers. t0 read-only, t1 standard author agent
-  (write + branch/PR + non-force push, no deploys/secrets), t2 = t1 + preview deploys.
-  **Only t1 is wired up** (`SETTINGS_PROFILE`, compile.ts:44); t0/t2 are unreferenced today.
-  `coherence.json` sits beside them: the tested bridge between what the layers say and what
-  the profiles enforce, read only by `harness-lint.ts` (compile ignores it).
+- `permissions/` — Claude Code approval profiles: t0 reviewer, t1 author, t2 preview.
+  **Only t1 is wired up** (`SETTINGS_PROFILE`); t0/t2 are unused today. General-purpose
+  runners/interpreters require approval in normal manual mode; named development commands
+  remain allowed. Direct secret-file reads are denied. These profiles are not sandboxes:
+  approved scripts can spawn subprocesses, and alternate forms can evade command denies.
+  `permissions/README.md` explains the boundary. `coherence.json` tests direct-prefix
+  coverage, not runtime isolation, and is read only by harness-lint (compile ignores it).
 - `commands/` — slash commands compile installs verbatim into `.claude/commands/` of every
   claude-enabled repo (`COMMANDS`, compile.ts). Currently just `conductor.md`. Byte-exact
   like the permission profile: doctor reports a local edit as drift. This is the
@@ -81,7 +88,7 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 ## Gotchas (verified 2026-07-11)
 
 - `package.json` says version 0.0.0 — release-please's `.release-please-manifest.json` is
-  the real version (1.1.1). Don't "fix" package.json.
+  the release version. Don't "fix" package.json.
 - doctor checks for `.github/ISSUE_TEMPLATE/task.yml` but compile never creates it — the
   platform templates provide it in generated repos. A bare compile target will FAIL that
   one check until the file exists.

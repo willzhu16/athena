@@ -19,15 +19,22 @@ Only when local gates are green:
 The reviewer reads the **diff against the task packet** — not the whole repo, not against
 its own taste.
 
-**Blocking findings (only these two):**
+**Blocking findings:**
 
 1. A new dependency introduced without human acknowledgment.
 2. An acceptance criterion with no covering test.
+3. Demonstrated correctness or security defects introduced or exposed by the change,
+   including regressions, data loss, or violations of the packet's constraints. Cite a
+   concrete failure scenario and evidence; a speculative concern is not a blocker.
 
-**Everything else is advisory.** A finding must cite `file:line` and a concrete failure
-scenario. "Could be cleaner" is not a finding — style belongs to the linter, which already
+**Style and speculative improvements are advisory.** A finding must cite `file:line`
+and a concrete failure scenario. "Could be cleaner" is not a finding — style belongs to the linter, which already
 ran. The author-agent may `wontfix` an advisory finding with one sentence of reasoning; the
 human sees both sides at merge time.
+
+An author may not dismiss a demonstrated defect as advisory just because an acceptance
+criterion omitted it. If resolving it would exceed scope, stop and ask the human to
+decide; the human remains the final merge gate.
 
 ## Anti-loop rules (binding on all agents)
 

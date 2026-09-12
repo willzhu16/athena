@@ -94,6 +94,64 @@ describe('deny-rule soundness', () => {
 });
 
 describe('rulebook / permission coherence', () => {
+  it.each([
+    ['Bash(gh secret list:*)', false],
+    ['Bash(gh secrets:*)', false],
+    ['Bash(gh secret)', false],
+    ['Bash(gh secret:*)', true],
+    ['Bash(gh secret *)', true],
+    ['Bash(gh:*)', true],
+    ['Bash', true],
+  ])('checks command-family coverage for %s', (rule, expected) => {
+    const layers = scratchDir({ 'security.md': 'Do not run gh secret.' });
+    const perms = scratchDir({ 't9.settings.json': profile([rule]) });
+    try {
+      const [finding] = claimChecks(
+        [
+          {
+            command: 'gh secret',
+            statedIn: ['security.md'],
+            enforcement: 'denied',
+            deniedIn: ['t9'],
+          },
+        ],
+        layers,
+        perms,
+      );
+      expect(finding?.ok).toBe(expected);
+    } finally {
+      rmSync(layers, { recursive: true, force: true });
+      rmSync(perms, { recursive: true, force: true });
+    }
+  });
+
+  it.each([{ deniedIn: [] }, { statedIn: [] }, { command: '' }])(
+    'rejects a vacuous claim: %j',
+    (override) => {
+      const layers = scratchDir({ 'security.md': 'Do not run gh secret.' });
+      const perms = scratchDir({ 't9.settings.json': profile(['Bash(gh secret:*)']) });
+      try {
+        const [finding] = claimChecks(
+          [
+            {
+              command: 'gh secret',
+              statedIn: ['security.md'],
+              enforcement: 'denied',
+              deniedIn: ['t9'],
+              ...override,
+            },
+          ],
+          layers,
+          perms,
+        );
+        expect(finding?.ok).toBe(false);
+      } finally {
+        rmSync(layers, { recursive: true, force: true });
+        rmSync(perms, { recursive: true, force: true });
+      }
+    },
+  );
+
   const denied: CoherenceClaim = {
     command: 'sops -d',
     statedIn: ['10-security.md'],
@@ -224,6 +282,45 @@ describe('duplicate rule lines', () => {
 });
 
 describe('harnessLint', () => {
+  it.each([
+    { claims: [null], acknowledgedUnsoundDenies: [] },
+    { claims: [{ command: 42 }], acknowledgedUnsoundDenies: [] },
+    {
+      claims: [
+        {
+          command: 'gh secret',
+          statedIn: ['10-security.md'],
+          enforcement: 'denied',
+          deniedIn: ['t1'],
+        },
+      ],
+      acknowledgedUnsoundDenies: [null],
+    },
+  ])('reports malformed manifest entries without crashing: %j', (manifest) => {
+    const perms = scratchDir({
+      'coherence.json': JSON.stringify(manifest),
+      't1.settings.json': profile(['Bash(gh secret:*)']),
+    });
+    try {
+      const report = harnessLint(instructionsDir, perms);
+      expect(report.findings).toEqual([expect.objectContaining({ name: 'coherence', ok: false })]);
+    } finally {
+      rmSync(perms, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['null', '{}', '{"claims":[],"acknowledgedUnsoundDenies":[]}'])(
+    'reports malformed manifest %s as FAIL',
+    (contents) => {
+      const perms = scratchDir({ 'coherence.json': contents });
+      try {
+        const report = harnessLint(instructionsDir, perms);
+        expect(report.findings.some((finding) => !finding.ok)).toBe(true);
+      } finally {
+        rmSync(perms, { recursive: true, force: true });
+      }
+    },
+  );
   it('passes against the harness actually shipped today', () => {
     const report = harnessLint(instructionsDir, permissionsDir);
     const failures = report.findings.filter((finding) => !finding.ok);
