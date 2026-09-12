@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/willzhu16/athena/compare/v1.3.0...v1.3.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* validate configs and correct permission coherence checks ([#13](https://github.com/willzhu16/athena/issues/13)) ([e4d225d](https://github.com/willzhu16/athena/commit/e4d225dae593cb94b6348d19c9691f5dc06d861a))
+
 ## [1.3.0](https://github.com/willzhu16/athena/compare/v1.2.0...v1.3.0) (2026-09-11)
 
 
