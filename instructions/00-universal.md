@@ -42,7 +42,7 @@ Done means every item in the handbook definition-of-done, in particular:
 - Docs updated in the same PR (README / runbooks / ADR as applicable); no debug logging,
   commented-out code, or stray TODOs left in the diff.
 
-See `platform/handbook/definition-of-done.md`.
+See the [definition of done](https://github.com/willzhu16/platform/blob/v1/handbook/definition-of-done.md).
 
 ## Tests come first
 
@@ -69,7 +69,9 @@ See `platform/handbook/definition-of-done.md`.
 - Work on a branch named `agent/<tool>/<task-slug>`; put the packet number in the PR title
   (`feat: … (#42)`). End the PR body with the session log (see 00 §Session log).
 
-## Anti-loop (binding; full protocol in review-protocol.md)
+## Anti-loop
+
+Full [review protocol](https://github.com/willzhu16/athena/blob/v1/review-protocol.md).
 
 - A fix that fails its gate **twice in a row** = stop, summarise the disagreement, ask.
   Do not try a third variation — two failures mean the mental model is wrong.

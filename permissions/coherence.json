@@ -1,5 +1,5 @@
 {
-  "note": "The tested bridge between the rulebook and the wall. Each claim names a command the instruction layers talk about and says whether a permission profile actually enforces it. harness-lint.ts asserts both halves, so a rule deleted from a layer or a deny removed from a profile fails a check instead of drifting silently.",
+  "note": "The tested bridge between stated rules and direct command-prefix denies. Claims require a source layer and enforcement tiers (or an advisory reason). Matching establishes coverage of the named prefix only, not runtime isolation, subprocess behavior, or alternate command spellings. See README.md.",
   "claims": [
     {
       "command": "sops -d",
@@ -54,7 +54,7 @@
     {
       "profile": "t0",
       "rule": "Bash(sops -d:*)",
-      "reason": "Flag-bearing deny. Kept because the paired sops --decrypt deny covers the long form, and t0 denies all writes anyway."
+      "reason": "Flag-bearing deny; paired with the long form, but alternate argument order and executable paths remain uncovered. t0 denies file-edit tools, not all filesystem writes by scripts."
     },
     {
       "profile": "t0",
@@ -74,7 +74,7 @@
     {
       "profile": "t1",
       "rule": "Bash(git push --force:*)",
-      "reason": "REVIEW-2026-07-15 finding #7: a flag placed after positional arguments (git push origin main --force) is not matched. Acknowledged, not fixed — editing this profile drifts every generated repo, so the fix is its own change. The branch ruleset (non_fast_forward) is the real control."
+      "reason": "The flag can move after positional arguments and evade this direct-prefix deny. Narrow runner approvals do not make it a sandbox; the protected-branch non_fast_forward ruleset is the server-side control. See README.md."
     },
     {
       "profile": "t1",
@@ -99,7 +99,7 @@
     {
       "profile": "t2",
       "rule": "Bash(git push --force:*)",
-      "reason": "t2 inherits t1's deny list; see the t1 entry."
+      "reason": "The flag can move after positional arguments and evade this direct-prefix deny. Narrow runner approvals do not make it a sandbox; the protected-branch non_fast_forward ruleset is the server-side control. See README.md."
     },
     {
       "profile": "t2",

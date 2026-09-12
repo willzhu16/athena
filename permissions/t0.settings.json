@@ -31,7 +31,10 @@
       "Bash(sops -d:*)",
       "Bash(sops --decrypt:*)",
       "Bash(tofu apply:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(secrets/**)"
     ]
   }
 }

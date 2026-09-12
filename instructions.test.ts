@@ -7,6 +7,28 @@ const instructionsDir = join(dirname(fileURLToPath(import.meta.url)), 'instructi
 const LAYER_LINE_CAP = 120;
 
 describe('instruction layers', () => {
+  it('allows framework-required default exports in the shared TypeScript rules', () => {
+    const ts = readFileSync(join(instructionsDir, '20-stack-ts.md'), 'utf8');
+    expect(ts).not.toContain('Named exports only, never default');
+    expect(ts).toContain('framework-required default exports');
+  });
+
+  it('links shared procedures to their source repos rather than nonexistent consumer paths', () => {
+    const universal = readFileSync(join(instructionsDir, '00-universal.md'), 'utf8');
+    const security = readFileSync(join(instructionsDir, '10-security.md'), 'utf8');
+    expect(universal).toContain(
+      'https://github.com/willzhu16/platform/blob/v1/handbook/definition-of-done.md',
+    );
+    expect(universal).toContain('https://github.com/willzhu16/athena/blob/v1/review-protocol.md');
+    expect(security).toContain('https://github.com/willzhu16/platform/blob/v1/security/README.md');
+  });
+
+  it('treats demonstrated correctness and security defects as blocking review findings', () => {
+    const review = readFileSync(join(instructionsDir, '../review-protocol.md'), 'utf8');
+    expect(review).not.toContain('Blocking findings (only these two)');
+    expect(review).toContain('Demonstrated correctness or security defects');
+  });
+
   const layers = readdirSync(instructionsDir).filter((name) => name.endsWith('.md'));
 
   it('exist', () => {

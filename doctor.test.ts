@@ -38,7 +38,12 @@ describe('doctor (config problems become failed checks, never crashes)', () => {
       mkdirSync(join(projectDir, '.athena'), { recursive: true });
       writeFileSync(
         join(projectDir, '.athena', 'config.json'),
-        JSON.stringify({ athenaVersion: 'v1', stack: 'no-such-stack', targets: [], tools: [] }),
+        JSON.stringify({
+          athenaVersion: 'v1',
+          stack: 'no-such-stack',
+          targets: [],
+          tools: ['codex'],
+        }),
       );
 
       const checks = doctor(projectDir, instructionsDir);

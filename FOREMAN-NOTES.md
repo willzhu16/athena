@@ -7,7 +7,7 @@ only). Record it here and move on; building it into the harness is out of scope 
 definition, not by phase.
 
 Athena's file formats are, deliberately, Foreman's future input spec: task packets = job
-format, permission tiers = worker sandboxing, check names = verification, compile adapters =
+format, permission tiers = tool approval defaults, check names = verification, compile adapters =
 the heterogeneous model fleet, session logs = telemetry. Writing the conventions first *is*
 the product research.
 

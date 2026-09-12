@@ -14,8 +14,8 @@ linter cannot check.
   the need for a comment.
 - **Small functions.** Keep functions under ~40 lines. When one grows past that, extract
   named helpers — the extraction usually reveals the real shape of the problem.
-- **Named exports only, never default.** Named exports make refactors and find-all-refs
-  reliable; default exports rename silently and hide from tooling.
+- Prefer named exports for application code; preserve framework-required default exports
+  such as the Cloudflare Worker entry point and tool configuration files.
 - **`const` by default.** Reach for `let` only when you truly reassign; never `var`.
 - **Types are contracts, not decoration.** Prefer precise types over `any`; if you reach
   for `any`, leave a comment saying why. `unknown` + narrowing beats `any` almost always.
