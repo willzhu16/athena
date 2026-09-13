@@ -19,7 +19,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   - tool `claude` → `CLAUDE.md` + `.claude/settings.json` (verbatim copy of
     `permissions/t1.settings.json`) + one `.claude/commands/<name>.md` per entry in
     `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`);
-    tool `codex` → `AGENTS.md` (same body, no settings and no commands).
+    tool `codex` → `AGENTS.md` + `.codex/config.toml` (verbatim copy of
+    `permissions/codex.config.toml`), but no `.claude/` surface and no slash commands.
   - each instruction output (CLAUDE.md / AGENTS.md) starts with a one-line header:
     `<!-- ATHENA-COMPILED <version> sha:<16-hex> — edit .athena/project.md ... -->`
     where the sha is sha256 of the body, truncated to 16 chars — deterministic, no
@@ -108,7 +109,10 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   platform templates provide it in generated repos. A bare compile target will FAIL that
   one check until the file exists.
 - The `review` field in `AthenaConfig` is typed but read by nothing — dead config.
-- Tool `codex` gets no permission profile and no commands; both are claude-only.
+- Tool `codex` gets a profile but no commands. Its profile is weaker by Codex's design:
+  it applies only once the human trusts the project, and Codex has no per-command deny
+  list, so it carries t1's secret-file denials and not its command denials. See
+  `permissions/README.md`.
 - `.gitattributes` forces LF everywhere; doctor's verbatim checks are byte-exact, so CRLF
   anywhere in `.claude/settings.json`, `.claude/commands/*`, the profiles or `commands/`
   reads as drift. Keep LF.

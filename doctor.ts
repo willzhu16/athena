@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   type AthenaConfig,
   buildBody,
+  CODEX_PROFILE,
   COMMANDS,
   computeHash,
   extractBody,
@@ -196,6 +197,16 @@ export const doctor = (
         ),
       );
     }
+  }
+  if (config.tools.includes('codex')) {
+    checks.push(
+      verbatimCheck(
+        projectDir,
+        '.codex/config.toml',
+        join(resolvedPermissionsDir, CODEX_PROFILE),
+        'the codex profile',
+      ),
+    );
   }
   if (config.tools.includes('codex') && expectedHash !== null) {
     checks.push(freshnessCheck(projectDir, 'AGENTS.md', expectedHash));

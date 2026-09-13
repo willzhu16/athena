@@ -57,9 +57,12 @@ describe('compile', () => {
     );
   });
 
-  it('ships no commands or settings to a codex-only project', () => {
+  it('ships no claude commands or settings to a codex-only project', () => {
+    // Codex now gets its own profile, but none of the Claude surface: no CLAUDE.md, no
+    // .claude/settings.json, no slash commands.
     const { files } = compile({ ...config, tools: ['codex'] }, inputs);
-    expect(Object.keys(files)).toEqual(['AGENTS.md']);
+
+    expect(Object.keys(files).sort()).toEqual(['.codex/config.toml', 'AGENTS.md']);
   });
 
   it('carries a footer hash that matches the compiled body', () => {
@@ -94,5 +97,22 @@ describe('compile', () => {
     const positions = order.map((heading) => body.indexOf(heading));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((first, second) => first - second));
+  });
+});
+
+describe('codex outputs', () => {
+  it('installs the codex permission profile alongside AGENTS.md', () => {
+    // Regression: tool `codex` produced instructions and nothing else, so every generated
+    // repo enforced rules for one agent and merely stated them for the other.
+    const { files } = compile(config, inputs);
+    const expected = readFileSync(join(permissionsDir, 'codex.config.toml'), 'utf8');
+
+    expect(files['.codex/config.toml']).toBe(expected);
+  });
+
+  it('emits no codex files when codex is not a configured tool', () => {
+    const { files } = compile({ ...config, tools: ['claude'] }, inputs);
+
+    expect(Object.keys(files).some((name) => name.startsWith('.codex/'))).toBe(false);
   });
 });

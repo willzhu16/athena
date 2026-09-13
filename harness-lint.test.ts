@@ -12,6 +12,7 @@ import {
   bundleCosts,
   type CoherenceClaim,
   claimChecks,
+  codexSecretsCheck,
   commandCosts,
   commandCrossLinkCheck,
   commandDuplicateCheck,
@@ -522,6 +523,36 @@ describe('harness scorecard', () => {
       writeScorecard(dir, scorecard);
 
       expect(scorecardCheck(dir, scorecard).ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('codex / claude secret coherence', () => {
+  it('passes against the two profiles actually shipped', () => {
+    expect(codexSecretsCheck(permissionsDir).ok).toBe(true);
+  });
+
+  it('fails when the codex profile stops denying a secret path the claude profile denies', () => {
+    const dir = scratchDir({
+      't1.settings.json': profile(['Read(secrets/**)', 'Read(**/.env)']),
+      'codex.config.toml': '[permissions.x.filesystem]\n"**/.env" = "deny"\n',
+    });
+    try {
+      const finding = codexSecretsCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('secrets/**');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a missing codex profile rather than throwing', () => {
+    const dir = scratchDir({ 't1.settings.json': profile([]) });
+    try {
+      expect(codexSecretsCheck(dir).ok).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

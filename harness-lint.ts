@@ -1,7 +1,13 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type AthenaConfig, buildBody, COMMANDS, SETTINGS_PROFILE } from './compile.ts';
+import {
+  type AthenaConfig,
+  buildBody,
+  CODEX_PROFILE,
+  COMMANDS,
+  SETTINGS_PROFILE,
+} from './compile.ts';
 
 /**
  * `athena harness-lint`: measures and tests the harness itself, rather than a repo that
@@ -596,6 +602,50 @@ export const commandEchoes = (instructionsDir: string, commandsDir: string): Ech
   return echoes;
 };
 
+/**
+ * t1 denies reading secret files; the Codex profile must deny the same ones. The two
+ * formats cannot be compared field by field — Codex has no per-command deny list at all —
+ * so this asserts the one thing both schemas can express, rather than pretending the
+ * command half maps across. See permissions/README.md.
+ */
+export const codexSecretsCheck = (permissionsDir: string): Finding => {
+  const name = 'codex secret denials';
+  const codexPath = join(permissionsDir, CODEX_PROFILE);
+  if (!existsSync(codexPath)) {
+    return { name, ok: false, detail: `missing ${CODEX_PROFILE}` };
+  }
+  const codexLines = readFileSync(codexPath, 'utf8').split('\n');
+  let claude: PermissionProfile;
+  try {
+    claude = readProfile(permissionsDir, SETTINGS_PROFILE.replace('.settings.json', ''));
+  } catch (error) {
+    return {
+      name,
+      ok: false,
+      detail: `cannot read the claude profile: ${(error as Error).message}`,
+    };
+  }
+  // Plain string matching on purpose. Building a regex out of a TOML glob means escaping
+  // `**` into a pattern language it does not belong to, which is how this check got its
+  // first bug; the profiles are a few lines long and a literal comparison cannot misfire.
+  const claudeDenies = (needle: string): boolean =>
+    claude.permissions.deny.some((rule) => rule.includes(needle));
+  const codexDenies = (needle: string): boolean =>
+    codexLines.some((line) => line.includes(needle) && line.includes('"deny"'));
+  const gaps = [
+    ...(claudeDenies('secrets/**') && !codexDenies('secrets/**') ? ['secrets/**'] : []),
+    ...(claudeDenies('.env') && !codexDenies('.env') ? ['.env'] : []),
+  ];
+  return {
+    name,
+    ok: gaps.length === 0,
+    detail:
+      gaps.length === 0
+        ? 'both profiles deny the same secret files'
+        : `the claude profile denies these but the codex profile does not: ${gaps.join(', ')}`,
+  };
+};
+
 /** Assemble the committed numbers. Ordering is fixed so the serialization is stable. */
 export const buildScorecard = (
   costs: BundleCost[],
@@ -700,6 +750,7 @@ export const harnessLint = (
       ...commandFrontmatterChecks(resolvedCommandsDir),
       commandDuplicateCheck(resolvedCommandsDir),
       commandCrossLinkCheck(resolvedCommandsDir),
+      codexSecretsCheck(permissionsDir),
       scorecardCheck(dirname(resolvedCommandsDir), scorecard),
     ],
     costs,
