@@ -41,7 +41,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   reason); every flag-bearing
   deny rule carries a written acknowledgement (order-sensitive patterns are evadable —
   REVIEW-2026-07-15 #7); the worst-case compiled bundle stays under `BUNDLE_TOKEN_BUDGET`
-  (4000; run harness-lint for the current estimate); and no rule line repeats inside one
+  (3600, ratcheted to the measured worst case rather than invented; run harness-lint for the
+  current estimate); and no rule line repeats inside one
   bundle. It also covers `commands/`: the directory must match `COMMANDS` exactly (an
   unlisted file never ships, a listed file that is absent makes compile throw), every command
   needs frontmatter carrying a description, no command repeats a line, and a same-named

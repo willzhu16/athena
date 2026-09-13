@@ -71,10 +71,15 @@ export interface HarnessReport {
 }
 
 /**
- * Estimated-token ceiling for the shared layer bundle. Run harness-lint for current
- * measurements; project instructions, skills and tool output are outside this budget.
+ * Estimated-token ceiling for the shared layer bundle, ratcheted to the measured worst case
+ * rather than invented — the same move platform made with its coverage floor. 4000 was a
+ * guess with 16% slack, guarding a two-target configuration no repo in the fleet actually
+ * loads; the real shipping bundles are smaller (cf-worker-app ~3006, py-tool ~2451).
+ *
+ * Raising this is meant to be a deliberate one-line act that shows up in a diff alongside
+ * the regenerated scorecard. Project instructions, skills and tool output sit outside it.
  */
-export const BUNDLE_TOKEN_BUDGET = 4000;
+export const BUNDLE_TOKEN_BUDGET = 3600;
 
 /** Cheap offline stand-in for a real tokenizer — no dependency, consistent across runs. */
 const CHARS_PER_TOKEN = 4;
