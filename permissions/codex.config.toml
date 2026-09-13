@@ -1,0 +1,35 @@
+# Codex permission profile, the counterpart to t1.settings.json. compile installs this at
+# .codex/config.toml and doctor checks it byte-for-byte.
+#
+# Read permissions/README.md before changing anything here. Two things make this weaker
+# than the Claude profile, and neither is a defect to fix:
+#
+# 1. It applies only once the human trusts the project. Codex "loads project-scoped config
+#    files only when the project is trusted. If the project is untrusted, Codex ignores
+#    project .codex/ layers." A repo cannot grant or restrict itself unilaterally.
+# 2. Codex has no per-command deny list. There is no equivalent of Bash(wrangler deploy:*).
+#    Command-level control comes from the sandbox and the approval prompt instead, so the
+#    command half of t1 has no direct analog here. The controls that actually stop a
+#    deploy are the same ones that always did: production credentials are absent from the
+#    agent's environment, and the branch ruleset and tag-gated environment live on GitHub.
+#
+# What this profile DOES carry over is the half Codex can express directly: the secret
+# files an agent must never read, matching the Read(**/.env) and Read(secrets/**) denies
+# in t1.settings.json. harness-lint asserts the two stay in step.
+#
+# Schema verified against the Codex configuration reference on 2026-09-13:
+# filesystem values are read | write | deny, deny beats write beats read, and more
+# specific entries override broader ones.
+
+default_permissions = "artemis-t1"
+approval_policy = "on-request"
+
+[permissions.artemis-t1]
+description = "Artemis author agent: edit the workspace, never read its secrets"
+extends = ":workspace"
+
+[permissions.artemis-t1.filesystem.":workspace_roots"]
+"." = "write"
+"**/*.env" = "deny"
+"**/.env" = "deny"
+"secrets/**" = "deny"

@@ -12,13 +12,23 @@ import {
   bundleCosts,
   type CoherenceClaim,
   claimChecks,
+  codexSecretsCheck,
+  commandCosts,
+  commandCrossLinkCheck,
+  commandDuplicateCheck,
+  commandFrontmatterChecks,
+  commandsManifestCheck,
   denySoundnessChecks,
   duplicateCheck,
   duplicateLines,
   harnessLint,
   isOrderSensitive,
   readProfile,
+  SCORECARD_FILE,
+  scorecardCheck,
+  serializeScorecard,
   unsoundDenies,
+  writeScorecard,
 } from './harness-lint.ts';
 
 const athenaDir = dirname(fileURLToPath(import.meta.url));
@@ -339,6 +349,212 @@ describe('harnessLint', () => {
       expect(report.findings[0]?.detail).toContain('unreadable coherence.json');
     } finally {
       rmSync(perms, { recursive: true, force: true });
+    }
+  });
+});
+
+/** A minimal well-formed slash command: frontmatter with a description, then a body. */
+const command = (description: string, body = 'Do the thing carefully and completely.\n'): string =>
+  `---\ndescription: ${description}\n---\n\n${body}`;
+
+describe('slash commands', () => {
+  it('accepts a directory that matches the COMMANDS list', () => {
+    const dir = scratchDir({ 'conductor.md': command('Run the conductor') });
+    try {
+      expect(commandsManifestCheck(dir).ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a command file COMMANDS does not list', () => {
+    // Regression: an orphan file is never installed by compile, so the command simply does
+    // not exist in generated repos and nothing says why.
+    const dir = scratchDir({
+      'conductor.md': command('Run the conductor'),
+      'stowaway.md': command('Never ships'),
+    });
+    try {
+      const finding = commandsManifestCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('stowaway.md');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails when COMMANDS names a file that is not on disk', () => {
+    const dir = scratchDir({ 'unrelated.txt': 'x' });
+    try {
+      const finding = commandsManifestCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('conductor.md');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a command with no frontmatter block', () => {
+    const dir = scratchDir({ 'conductor.md': 'Just a body, no frontmatter.\n' });
+    try {
+      const [finding] = commandFrontmatterChecks(dir);
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toContain('no --- frontmatter');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a command whose frontmatter has no description', () => {
+    // The command still installs; it just shows up unlabelled in the command list, which
+    // is invisible until someone goes looking for it.
+    const dir = scratchDir({ 'conductor.md': '---\nargument-hint: <spec>\n---\n\nBody.\n' });
+    try {
+      const [finding] = commandFrontmatterChecks(dir);
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toContain('no description');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails when a process doc never references the command it describes', () => {
+    // conductor.md asks a human to "keep the two in step". This is that request, tested.
+    const dir = scratchDir({
+      'commands/conductor.md': command('Run the conductor'),
+      'conductor.md': '# Conductor mode\n\nA protocol with no pointer at its command.\n',
+    });
+    try {
+      const finding = commandCrossLinkCheck(join(dir, 'commands'));
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('conductor.md');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a process doc that points at its command', () => {
+    const dir = scratchDir({
+      'commands/conductor.md': command('Run the conductor'),
+      'conductor.md': '# Conductor mode\n\nSee `commands/conductor.md` for the shipped one.\n',
+    });
+    try {
+      expect(commandCrossLinkCheck(join(dir, 'commands')).ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a command that states the same line twice', () => {
+    const line = 'Stop and get the packet split approved first.';
+    const dir = scratchDir({ 'conductor.md': command('x', `- ${line}\n\nmiddle\n\n- ${line}\n`) });
+    try {
+      const finding = commandDuplicateCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('conductor.md');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prices every command file', () => {
+    const dir = scratchDir({ 'conductor.md': command('Run the conductor') });
+    try {
+      const [cost] = commandCosts(dir);
+
+      expect(cost?.name).toBe('conductor.md');
+      expect(cost?.estimatedTokens).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('harness scorecard', () => {
+  const currentScorecard = () => {
+    const { scorecard } = harnessLint(instructionsDir, permissionsDir);
+    if (scorecard === null) {
+      throw new Error('the shipped harness should always produce a scorecard');
+    }
+    return scorecard;
+  };
+
+  it('measures the same numbers twice in a row', () => {
+    // The committed file is only useful as a diff if identical inputs serialize identically.
+    expect(serializeScorecard(currentScorecard())).toBe(serializeScorecard(currentScorecard()));
+  });
+
+  it('reports a missing scorecard as a failed check', () => {
+    const dir = scratchDir({ 'placeholder.txt': 'x' });
+    try {
+      const finding = scorecardCheck(dir, currentScorecard());
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('missing');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a scorecard that no longer matches the measurement', () => {
+    // Regression: the bundle grew ~20% across three sessions with nobody noticing, because
+    // the number only ever appeared on the screen of whoever ran the CLI.
+    const dir = scratchDir({ [SCORECARD_FILE]: '{\n  "bundles": "from an older run"\n}\n' });
+    try {
+      const finding = scorecardCheck(dir, currentScorecard());
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('stale');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts the scorecard it just wrote', () => {
+    const dir = scratchDir({ 'placeholder.txt': 'x' });
+    try {
+      const scorecard = currentScorecard();
+      writeScorecard(dir, scorecard);
+
+      expect(scorecardCheck(dir, scorecard).ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('codex / claude secret coherence', () => {
+  it('passes against the two profiles actually shipped', () => {
+    expect(codexSecretsCheck(permissionsDir).ok).toBe(true);
+  });
+
+  it('fails when the codex profile stops denying a secret path the claude profile denies', () => {
+    const dir = scratchDir({
+      't1.settings.json': profile(['Read(secrets/**)', 'Read(**/.env)']),
+      'codex.config.toml': '[permissions.x.filesystem]\n"**/.env" = "deny"\n',
+    });
+    try {
+      const finding = codexSecretsCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('secrets/**');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a missing codex profile rather than throwing', () => {
+    const dir = scratchDir({ 't1.settings.json': profile([]) });
+    try {
+      expect(codexSecretsCheck(dir).ok).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

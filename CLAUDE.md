@@ -19,7 +19,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   - tool `claude` → `CLAUDE.md` + `.claude/settings.json` (verbatim copy of
     `permissions/t1.settings.json`) + one `.claude/commands/<name>.md` per entry in
     `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`);
-    tool `codex` → `AGENTS.md` (same body, no settings and no commands).
+    tool `codex` → `AGENTS.md` + `.codex/config.toml` (verbatim copy of
+    `permissions/codex.config.toml`), but no `.claude/` surface and no slash commands.
   - each instruction output (CLAUDE.md / AGENTS.md) starts with a one-line header:
     `<!-- ATHENA-COMPILED <version> sha:<16-hex> — edit .athena/project.md ... -->`
     where the sha is sha256 of the body, truncated to 16 chars — deterministic, no
@@ -41,10 +42,22 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   reason); every flag-bearing
   deny rule carries a written acknowledgement (order-sensitive patterns are evadable —
   REVIEW-2026-07-15 #7); the worst-case compiled bundle stays under `BUNDLE_TOKEN_BUDGET`
-  (4000; run harness-lint for the current estimate); and no rule line repeats inside one
-  bundle. It also
-  prints three inventories that never fail: per-config bundle cost, rules echoed across
-  layers, and deny rules no layer explains (11 today).
+  (3600, ratcheted to the measured worst case rather than invented; run harness-lint for the
+  current estimate); and no rule line repeats inside one
+  bundle. It also covers `commands/`: the directory must match `COMMANDS` exactly (an
+  unlisted file never ships, a listed file that is absent makes compile throw), every command
+  needs frontmatter carrying a description, no command repeats a line, and a same-named
+  process doc at the repo root must reference `commands/<name>.md` — the mechanical version
+  of conductor.md's "keep the two in step".
+- **`harness-scorecard.json` is committed and verified, not merely printed.** `pnpm
+  harness-lint` FAILs when it is stale; `pnpm harness-lint --write` regenerates it. It holds
+  bundle cost per config, command cost, and coverage counts, so a change in any of them lands
+  in the PR diff instead of only on the screen of whoever ran the CLI — the bundle grew ~20%
+  across three sessions before this existed. Same idea as compile's content hash, aimed at
+  the harness itself. It is excluded from biome in `biome.json`: a generated file the
+  formatter also owns would ping-pong between `--write` and `biome check` forever.
+  The inventories that never fail: per-config bundle cost, command cost, rules echoed across
+  layers, lines a command shares with a layer, and deny rules no layer explains (11 today).
 - **Freshness is hash-of-actual-body vs hash-of-recomputed-body** (isFresh in doctor.ts) — it does
   NOT trust the header's declared sha, so hand-edits below an intact header are caught.
   Editing any instruction layer, permission profile, or the target's `project.md` makes
@@ -55,7 +68,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 - `pnpm install --frozen-lockfile` · `pnpm typecheck` · `pnpm lint` (biome; prints a benign
   `linter.recommended` deprecation info, exits 0) · `pnpm test` (vitest + coverage)
 - One file: `pnpm exec vitest run doctor.test.ts`
-- `pnpm harness-lint` — no arguments; always checks athena's own layers and profiles.
+- `pnpm harness-lint` — no arguments; checks athena's own layers, profiles and commands.
+- `pnpm harness-lint --write` — regenerate `harness-scorecard.json`, then commit the diff.
 - `pnpm compile <dir>` / `pnpm doctor <dir>` — never point compile at a repo you don't
   intend to modify, and never at `../platform/templates/*` (it would dump rendered output
   into jinja sources).
@@ -79,6 +93,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   claude-enabled repo (`COMMANDS`, compile.ts). Currently just `conductor.md`. Byte-exact
   like the permission profile: doctor reports a local edit as drift. This is the
   operational twin of the `conductor.md` process doc at the repo root — edit both.
+  harness-lint enforces the half of that which is mechanical: the doc must reference
+  `commands/conductor.md`, and the directory must match `COMMANDS`.
 - `conductor.md`, `task-packet.md`, `review-protocol.md`, `FOREMAN-NOTES.md` — process docs
   for multi-agent work (task packets, review rules, max-3-concurrency conductor pattern).
   FOREMAN-NOTES is the parking lot for out-of-scope runtime ideas (D-17/D-28).
@@ -93,7 +109,10 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   platform templates provide it in generated repos. A bare compile target will FAIL that
   one check until the file exists.
 - The `review` field in `AthenaConfig` is typed but read by nothing — dead config.
-- Tool `codex` gets no permission profile and no commands; both are claude-only.
+- Tool `codex` gets a profile but no commands. Its profile is weaker by Codex's design:
+  it applies only once the human trusts the project, and Codex has no per-command deny
+  list, so it carries t1's secret-file denials and not its command denials. See
+  `permissions/README.md`.
 - `.gitattributes` forces LF everywhere; doctor's verbatim checks are byte-exact, so CRLF
   anywhere in `.claude/settings.json`, `.claude/commands/*`, the profiles or `commands/`
   reads as drift. Keep LF.

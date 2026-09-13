@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   type AthenaConfig,
   buildBody,
+  CODEX_PROFILE,
   COMMANDS,
   computeHash,
   extractBody,
@@ -38,9 +39,47 @@ const presenceCheck = (projectDir: string, file: string): Check => {
 };
 
 /**
- * Byte-exact check for a file athena installs verbatim — no header, no hash. Covers the
- * permission profile and the shipped slash commands. Byte-exact on purpose: a reformatted
- * settings file is still drift from the profile doctor is asserting.
+ * Canonical text for a parsed JSON value: object keys sorted, array order preserved, no
+ * incidental whitespace. Two settings files with the same rules compare equal however they
+ * are indented or ordered, while adding, removing or reordering a rule still differs —
+ * arrays are compared positionally on purpose, since a permission list is not a set.
+ */
+const canonicalJson = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+};
+
+/**
+ * True when two JSON documents mean the same thing. Returns null when either side is not
+ * valid JSON, so the caller can fall back to the byte comparison rather than treat an
+ * unparseable file as equal.
+ */
+export const sameJson = (actual: string, expected: string): boolean | null => {
+  try {
+    return canonicalJson(JSON.parse(actual)) === canonicalJson(JSON.parse(expected));
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Check for a file athena installs verbatim — no header, no hash. Covers the permission
+ * profile and the shipped slash commands.
+ *
+ * Bytes first, because that is the common case and the cheapest. For JSON the comparison
+ * then falls back to meaning: an editor that reindents `.claude/settings.json`, or a
+ * Windows tool that rewrites its line endings, changes every byte without changing a single
+ * permission, and reporting that as tampering trains people to ignore the check. Anything
+ * that alters the actual rules — added, removed or reordered — still fails. Non-JSON files
+ * such as the slash commands stay byte-exact, since there is no meaning to compare.
  */
 const verbatimCheck = (
   projectDir: string,
@@ -65,12 +104,18 @@ const verbatimCheck = (
       detail: `cannot read expected source ${label}: ${(error as Error).message}`,
     };
   }
-  const ok = readFileSync(path, 'utf8') === expected;
-  return {
-    name: relativePath,
-    ok,
-    detail: ok ? `matches ${label}` : `content differs from ${label}`,
-  };
+  const actual = readFileSync(path, 'utf8');
+  if (actual === expected) {
+    return { name: relativePath, ok: true, detail: `matches ${label}` };
+  }
+  if (sameJson(actual, expected) === true) {
+    return {
+      name: relativePath,
+      ok: true,
+      detail: `matches ${label} (formatting differs, rules identical)`,
+    };
+  }
+  return { name: relativePath, ok: false, detail: `content differs from ${label}` };
 };
 
 /**
@@ -152,6 +197,16 @@ export const doctor = (
         ),
       );
     }
+  }
+  if (config.tools.includes('codex')) {
+    checks.push(
+      verbatimCheck(
+        projectDir,
+        '.codex/config.toml',
+        join(resolvedPermissionsDir, CODEX_PROFILE),
+        'the codex profile',
+      ),
+    );
   }
   if (config.tools.includes('codex') && expectedHash !== null) {
     checks.push(freshnessCheck(projectDir, 'AGENTS.md', expectedHash));

@@ -45,6 +45,14 @@ export const KNOWN_TOOLS = ['claude', 'codex'] as const;
 export const SETTINGS_PROFILE = 't1.settings.json';
 
 /**
+ * The Codex counterpart, installed at `.codex/config.toml`. Weaker than the Claude profile
+ * by Codex's design: it applies only once the human trusts the project, and Codex has no
+ * per-command deny list, so it carries the secret-file half of t1 and not the command half.
+ * See permissions/README.md.
+ */
+export const CODEX_PROFILE = 'codex.config.toml';
+
+/**
  * Slash commands compile installs verbatim into `.claude/commands/` and doctor verifies.
  * Shipping a pattern as a command is what makes it reachable; a process doc in the athena
  * repo is not something an agent working in a generated repo will ever find.
@@ -157,6 +165,10 @@ export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOu
       }
     } else if (tool === 'codex') {
       files['AGENTS.md'] = compiled;
+      files['.codex/config.toml'] = readFileSync(
+        join(inputs.permissionsDir, CODEX_PROFILE),
+        'utf8',
+      );
     }
   }
   return { hash, body, files };
