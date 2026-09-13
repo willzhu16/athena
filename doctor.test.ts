@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildBody, computeHash } from './compile.ts';
-import { doctor, isFresh } from './doctor.ts';
+import { doctor, isFresh, sameJson } from './doctor.ts';
 
 const body = '# Layer\n\nreal content\n';
 const hash = computeHash(body);
@@ -229,5 +229,42 @@ describe('doctor', () => {
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('sameJson (settings drift compares meaning, not bytes)', () => {
+  const profile =
+    '{\n  "permissions": {\n    "allow": ["Read"],\n    "deny": ["Bash(rm:*)"]\n  }\n}\n';
+
+  it('accepts a file that only differs in whitespace', () => {
+    // Regression: the check was byte-exact, so an editor reindenting the settings file, or
+    // a Windows tool rewriting its line endings, read as tampering.
+    expect(sameJson('{"permissions":{"allow":["Read"],"deny":["Bash(rm:*)"]}}', profile)).toBe(
+      true,
+    );
+  });
+
+  it('accepts a file whose object keys are in a different order', () => {
+    const reordered = '{"permissions":{"deny":["Bash(rm:*)"],"allow":["Read"]}}';
+    expect(sameJson(reordered, profile)).toBe(true);
+  });
+
+  it('rejects a file with a rule removed', () => {
+    expect(sameJson('{"permissions":{"allow":["Read"],"deny":[]}}', profile)).toBe(false);
+  });
+
+  it('rejects a file with an extra rule', () => {
+    const extra = '{"permissions":{"allow":["Read","Write"],"deny":["Bash(rm:*)"]}}';
+    expect(sameJson(extra, profile)).toBe(false);
+  });
+
+  it('rejects a reordered permission list, because order is not incidental', () => {
+    const swapped = '{"permissions":{"allow":["Read"],"deny":["Bash(rm:*)","Bash(x:*)"]}}';
+    const original = '{"permissions":{"allow":["Read"],"deny":["Bash(x:*)","Bash(rm:*)"]}}';
+    expect(sameJson(swapped, original)).toBe(false);
+  });
+
+  it('reports null for a file that is not JSON, so the caller keeps the byte result', () => {
+    expect(sameJson('not json at all', profile)).toBeNull();
   });
 });
