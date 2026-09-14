@@ -1,0 +1,99 @@
+# Artemis tier 1 command rules for Codex. compile installs this at
+# .codex/rules/artemis.rules and doctor checks it byte-for-byte.
+#
+# This is the command half of the profile. codex.t1.config.toml covers which FILES the
+# agent may touch; Codex keeps command policy in a separate Starlark rules file, so one
+# Claude profile maps onto two Codex files.
+#
+# Decisions are allow (default), prompt, or forbidden, and the most restrictive matching
+# rule wins. `match` and `not_match` are inline unit tests: Codex refuses to load the file
+# if a `match` example fails to match, so a rule cannot silently stop working.
+#
+# Validate with:
+#   codex execpolicy check --pretty --rules <file> -- <command>
+
+prefix_rule(
+    pattern = ["wrangler", "deploy"],
+    decision = "forbidden",
+    justification = "Production deploys are tags-only through release.yml, and the credentials are not in the agent's environment.",
+    match = ["wrangler deploy", "wrangler deploy --env production"],
+    not_match = ["wrangler dev", "wrangler types"],
+)
+
+prefix_rule(
+    pattern = ["wrangler", "versions"],
+    decision = "forbidden",
+    justification = "Preview uploads belong to tier 2; promoting a version is never the agent's call.",
+    match = ["wrangler versions upload", "wrangler versions deploy"],
+    not_match = ["wrangler dev"],
+)
+
+prefix_rule(
+    pattern = ["wrangler", "pages", "deploy"],
+    decision = "forbidden",
+    justification = "Pages deploys belong to tier 2.",
+    match = ["wrangler pages deploy"],
+    not_match = ["wrangler pages dev"],
+)
+
+prefix_rule(
+    pattern = ["wrangler", ["rollback", "secret"]],
+    decision = "forbidden",
+    justification = "Rollback is a human decision; secrets are never read or written by an agent.",
+    match = ["wrangler rollback", "wrangler secret put API_KEY", "wrangler secret list"],
+    not_match = ["wrangler dev"],
+)
+
+prefix_rule(
+    pattern = ["gh", ["secret", "auth"]],
+    decision = "forbidden",
+    justification = "Secrets and credentials are out of scope for an agent; it gets names, never values.",
+    match = ["gh secret list", "gh secret set FOO", "gh auth token"],
+    not_match = ["gh pr view 1", "gh issue list"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "merge"],
+    decision = "forbidden",
+    justification = "Merging is the human's gate. The agent opens the PR and stops.",
+    match = ["gh pr merge 42", "gh pr merge --squash"],
+    # Documents the same prefix limitation the force-push rules carry: a flag placed before
+    # the subcommand is a different prefix and is not matched.
+    not_match = ["gh pr view 42", "gh pr --repo willzhu16/athena merge 42"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["--force", "-f", "--force-with-lease"]],
+    decision = "forbidden",
+    justification = "Force-push rewrites shared history. Note this is prefix-matched and evadable; the branch ruleset's non_fast_forward is the control that actually holds.",
+    match = ["git push --force", "git push -f", "git push --force-with-lease"],
+    # A tested record of the known gap: moving the flag after the positional arguments is a
+    # different prefix, so it is NOT caught here. Deliberately written down rather than left
+    # for someone to discover, and it fails to load if that ever stops being true.
+    not_match = ["git push origin main --force", "git push origin main"],
+)
+
+prefix_rule(
+    pattern = ["tofu", ["apply", "destroy"]],
+    decision = "forbidden",
+    justification = "Infrastructure changes are not the agent's to make.",
+    match = ["tofu apply", "tofu destroy"],
+    not_match = ["tofu plan", "tofu fmt"],
+)
+
+prefix_rule(
+    pattern = ["terraform", ["apply", "destroy"]],
+    decision = "forbidden",
+    justification = "Infrastructure changes are not the agent's to make.",
+    match = ["terraform apply", "terraform destroy"],
+    not_match = ["terraform plan", "terraform fmt"],
+)
+
+prefix_rule(
+    pattern = ["sops", ["-d", "--decrypt", "exec-env"]],
+    decision = "forbidden",
+    justification = "Decrypting secrets puts their values in the model's context. Ask which store a secret belongs in instead.",
+    match = ["sops -d secrets/prod.env", "sops --decrypt secrets/prod.env", "sops exec-env secrets/prod.env env"],
+    # Same prefix limitation as the force-push rules: a flag after the filename is missed.
+    not_match = ["sops secrets/prod.env -d"],
+)

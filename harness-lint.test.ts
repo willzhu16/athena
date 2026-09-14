@@ -530,29 +530,52 @@ describe('harness scorecard', () => {
 });
 
 describe('codex / claude secret coherence', () => {
-  it('passes against the two profiles actually shipped', () => {
-    expect(codexSecretsCheck(permissionsDir).ok).toBe(true);
+  it('passes for every tier actually shipped', () => {
+    const findings = codexSecretsCheck(permissionsDir);
+
+    expect(findings.map((finding) => finding.name).sort()).toEqual([
+      'codex t0 secret denials',
+      'codex t1 secret denials',
+      'codex t2 secret denials',
+    ]);
+    expect(findings.filter((finding) => !finding.ok)).toEqual([]);
   });
 
-  it('fails when the codex profile stops denying a secret path the claude profile denies', () => {
-    const dir = scratchDir({
-      't1.settings.json': profile(['Read(secrets/**)', 'Read(**/.env)']),
-      'codex.config.toml': '[permissions.x.filesystem]\n"**/.env" = "deny"\n',
-    });
+  it('fails when a tier has a claude profile but no codex counterpart', () => {
+    // The pairing is the point: a tier that ships for one agent and not the other is how
+    // `tier: 2` would quietly mean different things depending on which tool read it.
+    const dir = scratchDir({ 't2.settings.json': profile(['Read(secrets/**)']) });
     try {
-      const finding = codexSecretsCheck(dir);
+      const finding = codexSecretsCheck(dir).find((entry) => entry.name.includes('t2'));
 
-      expect(finding.ok).toBe(false);
-      expect(finding.detail).toContain('secrets/**');
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toContain('codex.t2.config.toml');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('reports a missing codex profile rather than throwing', () => {
-    const dir = scratchDir({ 't1.settings.json': profile([]) });
+  it('fails when a codex profile stops denying a secret path its claude profile denies', () => {
+    const dir = scratchDir({
+      't1.settings.json': profile(['Read(secrets/**)', 'Read(**/.env)']),
+      'codex.t1.config.toml': '[permissions.x.filesystem]\n"**/.env" = "deny"\n',
+      // Both Codex halves must exist or the pairing check fires before the denial check.
+      'codex.t1.rules': 'prefix_rule(pattern = ["rm"], decision = "forbidden")\n',
+    });
     try {
-      expect(codexSecretsCheck(dir).ok).toBe(false);
+      const finding = codexSecretsCheck(dir).find((entry) => entry.name.includes('t1'));
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toContain('secrets/**');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says nothing is required for a tier that ships no profile at all', () => {
+    const dir = scratchDir({ 'placeholder.txt': 'x' });
+    try {
+      expect(codexSecretsCheck(dir).every((finding) => finding.ok)).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

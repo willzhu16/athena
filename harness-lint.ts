@@ -4,9 +4,12 @@ import { fileURLToPath } from 'node:url';
 import {
   type AthenaConfig,
   buildBody,
-  CODEX_PROFILE,
   COMMANDS,
+  codexProfileFor,
+  codexRulesFor,
+  KNOWN_TIERS,
   SETTINGS_PROFILE,
+  settingsProfileFor,
 } from './compile.ts';
 
 /**
@@ -608,43 +611,60 @@ export const commandEchoes = (instructionsDir: string, commandsDir: string): Ech
  * so this asserts the one thing both schemas can express, rather than pretending the
  * command half maps across. See permissions/README.md.
  */
-export const codexSecretsCheck = (permissionsDir: string): Finding => {
-  const name = 'codex secret denials';
-  const codexPath = join(permissionsDir, CODEX_PROFILE);
-  if (!existsSync(codexPath)) {
-    return { name, ok: false, detail: `missing ${CODEX_PROFILE}` };
-  }
-  const codexLines = readFileSync(codexPath, 'utf8').split('\n');
-  let claude: PermissionProfile;
-  try {
-    claude = readProfile(permissionsDir, SETTINGS_PROFILE.replace('.settings.json', ''));
-  } catch (error) {
+export const codexSecretsCheck = (permissionsDir: string): Finding[] =>
+  (KNOWN_TIERS as readonly number[]).map((tier) => {
+    const name = `codex t${tier} secret denials`;
+    const claudeProfile = settingsProfileFor(tier);
+    const codexProfile = codexProfileFor(tier);
+    if (!existsSync(join(permissionsDir, claudeProfile))) {
+      // No claude profile for this tier means the tier does not ship; nothing to pair.
+      return { name, ok: true, detail: `tier ${tier} ships no profile` };
+    }
+    const codexRules = codexRulesFor(tier);
+    const missing = [codexProfile, codexRules].filter(
+      (file) => !existsSync(join(permissionsDir, file)),
+    );
+    if (missing.length > 0) {
+      // Both halves or neither: Codex splits file access and command policy across two
+      // files, so a tier shipping only one of them enforces half of what it promises.
+      return {
+        name,
+        ok: false,
+        detail: `${claudeProfile} exists but ${missing.join(' and ')} does not`,
+      };
+    }
+    const codexLines = readFileSync(join(permissionsDir, codexProfile), 'utf8').split('\n');
+    let claude: PermissionProfile;
+    try {
+      claude = readProfile(permissionsDir, `t${tier}`);
+    } catch (error) {
+      return {
+        name,
+        ok: false,
+        detail: `cannot read ${claudeProfile}: ${(error as Error).message}`,
+      };
+    }
+    // Plain string matching on purpose. Turning a TOML glob into a regex means escaping `**`
+    // into a pattern language it does not belong to, which is how this check got its first
+    // bug; the profiles are a few lines long and a literal comparison cannot misfire.
+    const claudeDenies = (needle: string): boolean =>
+      claude.permissions.deny.some((rule) => rule.includes(needle));
+    const codexDenies = (needle: string): boolean =>
+      codexLines.some((line) => line.includes(needle) && line.includes('"deny"'));
+    // t0 denies the edit tools wholesale rather than naming secret paths, so its secret
+    // denials are asserted directly instead of against the claude list.
+    const wanted =
+      tier === 0 ? ['secrets/**', '.env'] : ['secrets/**', '.env'].filter(claudeDenies);
+    const gaps = wanted.filter((needle) => !codexDenies(needle));
     return {
       name,
-      ok: false,
-      detail: `cannot read the claude profile: ${(error as Error).message}`,
+      ok: gaps.length === 0,
+      detail:
+        gaps.length === 0
+          ? `${codexProfile} denies ${wanted.join(', ') || 'nothing required'}`
+          : `${codexProfile} does not deny: ${gaps.join(', ')}`,
     };
-  }
-  // Plain string matching on purpose. Building a regex out of a TOML glob means escaping
-  // `**` into a pattern language it does not belong to, which is how this check got its
-  // first bug; the profiles are a few lines long and a literal comparison cannot misfire.
-  const claudeDenies = (needle: string): boolean =>
-    claude.permissions.deny.some((rule) => rule.includes(needle));
-  const codexDenies = (needle: string): boolean =>
-    codexLines.some((line) => line.includes(needle) && line.includes('"deny"'));
-  const gaps = [
-    ...(claudeDenies('secrets/**') && !codexDenies('secrets/**') ? ['secrets/**'] : []),
-    ...(claudeDenies('.env') && !codexDenies('.env') ? ['.env'] : []),
-  ];
-  return {
-    name,
-    ok: gaps.length === 0,
-    detail:
-      gaps.length === 0
-        ? 'both profiles deny the same secret files'
-        : `the claude profile denies these but the codex profile does not: ${gaps.join(', ')}`,
-  };
-};
+  });
 
 /** Assemble the committed numbers. Ordering is fixed so the serialization is stable. */
 export const buildScorecard = (
@@ -750,7 +770,7 @@ export const harnessLint = (
       ...commandFrontmatterChecks(resolvedCommandsDir),
       commandDuplicateCheck(resolvedCommandsDir),
       commandCrossLinkCheck(resolvedCommandsDir),
-      codexSecretsCheck(permissionsDir),
+      ...codexSecretsCheck(permissionsDir),
       scorecardCheck(dirname(resolvedCommandsDir), scorecard),
     ],
     costs,

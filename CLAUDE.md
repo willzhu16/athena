@@ -12,15 +12,17 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 ## The contract (what the code does)
 
 - `pnpm compile <projectDir>` (`compile.ts`) reads the target's `.athena/config.json`
-  (`{athenaVersion, stack, targets[], tools[]}`) and optional `.athena/project.md`, merges
+  (`{athenaVersion, stack, targets[], tools[], tier?}`) and optional `.athena/project.md`, merges
   instruction layers in a fixed order, and **writes into `<projectDir>`**:
   - layers: `00-universal.md` + `10-security.md` + `20-stack-<stack>.md` + one
     `30-target-<t>.md` per target + `project.md` last (`resolveLayers` in compile.ts).
   - tool `claude` → `CLAUDE.md` + `.claude/settings.json` (verbatim copy of
-    `permissions/t1.settings.json`) + one `.claude/commands/<name>.md` per entry in
+    `permissions/t<tier>.settings.json`) + one `.claude/commands/<name>.md` per entry in
     `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`);
-    tool `codex` → `AGENTS.md` + `.codex/config.toml` (verbatim copy of
-    `permissions/codex.config.toml`), but no `.claude/` surface and no slash commands.
+    tool `codex` → `AGENTS.md` + `.codex/config.toml` (file access) +
+    `.codex/rules/artemis.rules` (commands), both from `permissions/codex.t<tier>.*`, and
+    no `.claude/` surface or slash commands. Codex splits file and command policy across
+    two files, so one Claude profile maps onto two Codex outputs.
   - each instruction output (CLAUDE.md / AGENTS.md) starts with a one-line header:
     `<!-- ATHENA-COMPILED <version> sha:<16-hex> — edit .athena/project.md ... -->`
     where the sha is sha256 of the body, truncated to 16 chars — deterministic, no
@@ -83,7 +85,14 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   `20-stack-*.md` files (ts, python); valid `targets` = `30-target-*.md` (workers,
   vscode-ext). Adding a file IS adding a valid config value.
 - `permissions/` — Claude Code approval profiles: t0 reviewer, t1 author, t2 preview.
-  **Only t1 is wired up** (`SETTINGS_PROFILE`); t0/t2 are unused today. General-purpose
+  **A repo picks one with `tier` in `.athena/config.json`** (0-2). Omitting it means tier 1,
+  which is what every repo got before tiers existed, so adding the field drifts nothing.
+  Adding a tier is adding its profile files, the same way adding a layer adds a valid stack.
+  All three tiers ship both a Claude and a Codex profile. A tier missing either one fails
+  loudly rather than installing another tier's permissions. Note that `codex.t2` is
+  identical to `codex.t1.config.toml` on purpose — the t1/t2 difference is command-scoped,
+  so it lives in `codex.t2.rules` instead. `permissions/README.md` has the mapping.
+  General-purpose
   runners/interpreters require approval in normal manual mode; named development commands
   remain allowed. Direct secret-file reads are denied. These profiles are not sandboxes:
   approved scripts can spawn subprocesses, and alternate forms can evade command denies.

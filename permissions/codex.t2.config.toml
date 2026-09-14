@@ -1,0 +1,28 @@
+# Codex file-access profile for tier 2. Counterpart to t2.settings.json. compile installs
+# this at .codex/config.toml and doctor checks it byte-for-byte.
+#
+# This file is identical in policy to codex.t1.config.toml, and that IS correct here: the
+# tier 1 / tier 2 difference is entirely about which commands may run, not which files may
+# be touched. Codex keeps command policy in a separate Starlark rules file, so the real
+# difference between the tiers lives in codex.t2.rules — where `wrangler versions upload`
+# and `wrangler pages deploy` stop being forbidden while `wrangler versions deploy`, the
+# production promotion, stays forbidden.
+#
+# An earlier version of this file claimed the t1/t2 distinction could not be expressed in
+# Codex at all, and argued against faking it with network access. The first half of that was
+# simply wrong — Codex does have command-level rules — and the file it pointed at now
+# carries the distinction properly. The advice against reaching for network access still
+# stands: general egress would grant far more than two wrangler subcommands.
+
+default_permissions = "artemis-t2"
+approval_policy = "on-request"
+
+[permissions.artemis-t2]
+description = "Artemis author agent at tier 2: same file access as tier 1, preview deploys allowed by the command rules"
+extends = ":workspace"
+
+[permissions.artemis-t2.filesystem.":workspace_roots"]
+"." = "write"
+"**/*.env" = "deny"
+"**/.env" = "deny"
+"secrets/**" = "deny"
