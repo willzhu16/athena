@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/willzhu16/athena/compare/v1.3.1...v1.4.0) (2026-09-14)
+
+
+### Features
+
+* **permissions:** add tier selection and Codex command rules ([#16](https://github.com/willzhu16/athena/issues/16)) ([67c872c](https://github.com/willzhu16/athena/commit/67c872c09c05c461e3292d62119e1e2c8af04c6c))
+
 ## [1.3.1](https://github.com/willzhu16/athena/compare/v1.3.0...v1.3.1) (2026-09-12)
 
 
