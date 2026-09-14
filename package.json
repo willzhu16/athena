@@ -8,12 +8,15 @@
     "lint": "biome ci .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
+    "test:mutation": "stryker run",
     "compile": "tsx compile.ts",
     "doctor": "tsx doctor.ts",
     "harness-lint": "tsx harness-lint.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "^24.13.4",
     "@vitest/coverage-v8": "^4.1.11",
     "tsx": "^4.23.13",

@@ -1,16 +1,19 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type AthenaConfig,
   buildBody,
   compile,
   computeHash,
   extractBody,
+  main,
   readDeclaredHash,
   resolveLayers,
+  validateConfig,
+  writeOutputs,
 } from './compile.ts';
 
 const athenaDir = dirname(fileURLToPath(import.meta.url));
@@ -194,5 +197,182 @@ describe('codex command rules', () => {
     const t1 = readFileSync(join(permissionsDir, 'codex.t1.rules'), 'utf8');
 
     expect(t1).toContain('"git push origin main --force"');
+  });
+});
+
+describe('config validation (the message is the whole user interface)', () => {
+  // `.athena/config.json` is hand-edited and hand-copied between repos, so a rejection has
+  // to name the field that is wrong. These assert the exact text: a message that only says
+  // "invalid config" sends someone back to read the compiler source.
+  const valid: Record<string, unknown> = {
+    athenaVersion: 'v1',
+    stack: 'ts',
+    targets: ['workers'],
+    tools: ['claude'],
+  };
+
+  const rejects = (config: unknown, detail: string): void => {
+    expect(() => validateConfig(config)).toThrow(`athena: invalid config — ${detail}`);
+  };
+
+  it('accepts the shape every generated repo ships', () => {
+    expect(() => validateConfig(valid)).not.toThrow();
+    expect(() => validateConfig({ ...valid, tier: 2 })).not.toThrow();
+    expect(() => validateConfig({ ...valid, targets: [] })).not.toThrow();
+  });
+
+  it('rejects anything that is not a plain object', () => {
+    for (const value of [null, 'a string', 42, ['ts']]) {
+      rejects(value, 'must be an object');
+    }
+  });
+
+  it('rejects an athenaVersion that would break the compiled header', () => {
+    // It is interpolated straight into an HTML comment, so whitespace and angle brackets
+    // are the characters that could end the comment early.
+    for (const athenaVersion of [undefined, 1, '', 'v 1', 'v1<']) {
+      rejects({ ...valid, athenaVersion }, '"athenaVersion" must be a non-empty header token');
+    }
+  });
+
+  it('rejects a stack that is not a layer identifier', () => {
+    // The value becomes a filename, so it is anchored at both ends: a trailing-garbage
+    // stack that matched only its prefix would resolve to a layer nobody named.
+    for (const stack of [undefined, 42, '', 'TS', 'ts workers', 'ts/../etc']) {
+      rejects({ ...valid, stack }, '"stack" must be a layer identifier');
+    }
+  });
+
+  it('rejects a targets field that is not a list', () => {
+    rejects({ ...valid, targets: 'workers' }, '"targets" must be an array');
+  });
+
+  it('rejects target entries that are not layer identifiers', () => {
+    for (const targets of [[42], ['Workers'], ['workers extra'], ['']]) {
+      rejects({ ...valid, targets }, '"targets" must contain layer identifiers');
+    }
+  });
+
+  it('rejects a repeated target, which would load the same layer twice', () => {
+    rejects({ ...valid, targets: ['workers', 'workers'] }, '"targets" must be unique');
+  });
+
+  it('rejects a tools field that is not a list', () => {
+    rejects({ ...valid, tools: 'claude' }, '"tools" must be an array');
+  });
+
+  it('rejects an empty tools list, which would compile nothing at all', () => {
+    rejects({ ...valid, tools: [] }, '"tools" must contain at least one tool');
+  });
+
+  it('names the unknown tool and the ones it knows', () => {
+    rejects({ ...valid, tools: ['claud'] }, 'unknown tool "claud" — known tools: claude, codex');
+    rejects({ ...valid, tools: [7] }, 'unknown tool "7" — known tools: claude, codex');
+  });
+
+  it('rejects a repeated tool', () => {
+    rejects({ ...valid, tools: ['claude', 'claude'] }, '"tools" must be unique');
+  });
+
+  it('names the unknown tier and the ones it knows', () => {
+    rejects({ ...valid, tier: 9 }, 'unknown tier "9" — known tiers: 0, 1, 2');
+    rejects({ ...valid, tier: '1' }, 'unknown tier "1" — known tiers: 0, 1, 2');
+  });
+});
+
+describe('the compiled header (a frozen contract, D-18)', () => {
+  it('is one line naming the marker, the version, the hash and where to edit instead', () => {
+    // doctor parses this line and every generated repo carries it. Changing its shape is a
+    // breaking change across the fleet, so the exact text is pinned here rather than
+    // described loosely.
+    const config: AthenaConfig = {
+      athenaVersion: 'v1',
+      stack: 'ts',
+      targets: [],
+      tools: ['claude'],
+    };
+    const outputs = compile(config, {
+      instructionsDir,
+      permissionsDir,
+      commandsDir,
+      projectLayer: '',
+    });
+
+    expect(outputs.files['CLAUDE.md']?.split('\n')[0]).toBe(
+      `<!-- ATHENA-COMPILED v1 sha:${outputs.hash} — ` +
+        'edit .athena/project.md or the athena repo, never this file -->',
+    );
+  });
+
+  it('returns the whole text when there is no header to strip', () => {
+    // A file with no blank line after the header has no body boundary; returning the whole
+    // string keeps the hash comparison honest instead of silently dropping a character.
+    expect(extractBody('no header at all')).toBe('no header at all');
+    expect(extractBody('header line\n\nbody text\n')).toBe('body text\n');
+  });
+});
+
+describe('writeOutputs', () => {
+  it('returns every relative path it wrote', () => {
+    // The return value is what the CLI prints, and the only record of what a compile run
+    // touched in someone else's repo.
+    const config: AthenaConfig = {
+      athenaVersion: 'v1',
+      stack: 'ts',
+      targets: [],
+      tools: ['claude', 'codex'],
+    };
+    const outputs = compile(config, {
+      instructionsDir,
+      permissionsDir,
+      commandsDir,
+      projectLayer: '',
+    });
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-compile-'));
+    try {
+      const written = writeOutputs(projectDir, outputs);
+
+      expect([...written].sort()).toEqual(Object.keys(outputs.files).sort());
+      expect(written).toContain('.claude/commands/conductor.md');
+      for (const relative of written) {
+        expect(readFileSync(join(projectDir, relative), 'utf8')).toBe(outputs.files[relative]);
+      }
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('compile CLI', () => {
+  it('compiles the project named on the command line and reports what it wrote', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-compile-'));
+    const originalArgv = process.argv;
+    const lines: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({ athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claude'] }),
+      );
+      writeFileSync(join(projectDir, '.athena', 'project.md'), '# Project\n\nship on Fridays\n');
+      process.argv = ['node', 'compile.ts', projectDir];
+
+      main();
+
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(
+        /^athena: compiled 3 file\(s\) \[sha:[0-9a-f]{16}\] -> CLAUDE\.md, \.claude\/settings\.json, \.claude\/commands\/conductor\.md$/,
+      );
+      // The project layer has to reach the compiled file, or a repo's own rules are the one
+      // part of the harness that never ships.
+      expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('ship on Fridays');
+    } finally {
+      process.argv = originalArgv;
+      log.mockRestore();
+      rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 });

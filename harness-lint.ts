@@ -789,7 +789,13 @@ export const writeScorecard = (athenaRoot: string, scorecard: Scorecard): string
   return path;
 };
 
-const printReport = (report: HarnessReport): void => {
+/**
+ * The CLI's verdict. Exported because it is the enforcement: `main` runs only against
+ * athena's own layers, so this rule is the one part of the exit path a test can reach.
+ */
+export const anyFailed = (findings: Finding[]): boolean => findings.some((finding) => !finding.ok);
+
+export const printReport = (report: HarnessReport): void => {
   for (const finding of report.findings) {
     console.log(`${finding.ok ? 'PASS' : 'FAIL'}  ${finding.name} — ${finding.detail}`);
   }
@@ -829,7 +835,7 @@ const printReport = (report: HarnessReport): void => {
   }
 };
 
-const main = (): void => {
+export const main = (): void => {
   const athenaDir = dirname(fileURLToPath(import.meta.url));
   const report = harnessLint(join(athenaDir, 'instructions'), join(athenaDir, 'permissions'));
   // --write regenerates the committed scorecard, so the numbers land in the PR diff rather
@@ -847,11 +853,14 @@ const main = (): void => {
     ? harnessLint(join(athenaDir, 'instructions'), join(athenaDir, 'permissions'))
     : report;
   printReport(final);
-  if (final.findings.some((finding) => !finding.ok)) {
+  if (anyFailed(final.findings)) {
     process.exitCode = 1;
   }
 };
 
+// The CLI entry guard cannot be exercised from a test: the test runner is always
+// argv[1], never this module. Excluded so the score measures testable logic.
+// Stryker disable next-line all
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main();
 }

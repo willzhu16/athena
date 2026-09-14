@@ -46,13 +46,17 @@ const presenceCheck = (projectDir: string, file: string): Check => {
  * are indented or ordered, while adding, removing or reordering a rule still differs —
  * arrays are compared positionally on purpose, since a permission list is not a set.
  */
-const canonicalJson = (value: unknown): string => {
+export const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJson).join(',')}]`;
   }
   if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-      a < b ? -1 : a > b ? 1 : 0,
+    // Keys within one object are unique, so only the "less than" arm ever decides an
+    // order: every mutation of this comparator sorts identically. Excluded as
+    // equivalent mutants rather than chased with a test that cannot exist.
+    const entries = Object.entries(value as Record<string, unknown>).sort(
+      // Stryker disable next-line all
+      ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
     );
     return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`;
   }
@@ -230,7 +234,7 @@ export const doctor = (
   return checks;
 };
 
-const main = (): void => {
+export const main = (): void => {
   const athenaDir = dirname(fileURLToPath(import.meta.url));
   const projectDir = process.argv[2] ?? process.cwd();
   const checks = doctor(projectDir, join(athenaDir, 'instructions'));
@@ -242,6 +246,9 @@ const main = (): void => {
   }
 };
 
+// The CLI entry guard cannot be exercised from a test: the test runner is always
+// argv[1], never this module. Excluded so the score measures testable logic.
+// Stryker disable next-line all
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main();
 }

@@ -1,0 +1,56 @@
+name: mutation
+
+# Mutation testing, repo-local rather than part of the reusable platform pipeline.
+#
+# The other gates answer "did the tests run and pass". This one answers "would the tests
+# have noticed if the code were wrong": Stryker edits the source a thousand ways and fails
+# the run if too few edits break a test. It caught doctor.ts sitting at 48% while every
+# test was green — the drift checker could have been rewritten to report a missing
+# permission profile as PASS without a single failure.
+#
+# Not in platform's ci.yml on purpose: it costs minutes rather than seconds, and it needs
+# a `test:mutation` script the rest of the fleet does not have yet. Keep it here until the
+# templates carry one too.
+#
+# The score gate is `thresholds.break` in stryker.config.json, ratcheted to the measured
+# number. This check is NOT in rulesets/main.json, so it reports red without blocking a
+# merge until that ruleset is updated.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One live run per branch: a superseded push cancels the previous run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Mutation test
+        run: pnpm run test:mutation
+      - name: Upload the mutation report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-report
+          path: reports/mutation.json
+          if-no-files-found: ignore
