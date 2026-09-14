@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 import {
   type AthenaConfig,
   buildBody,
-  CODEX_PROFILE,
   COMMANDS,
+  codexProfileFor,
+  codexRulesFor,
   computeHash,
   extractBody,
-  SETTINGS_PROFILE,
+  settingsProfileFor,
+  tierOf,
   validateConfig,
 } from './compile.ts';
 
@@ -161,7 +163,11 @@ export const doctor = (
     return [{ name: 'config', ok: false, detail: (error as Error).message }];
   }
   const checks: Check[] = [
-    { name: 'config', ok: true, detail: `stack=${config.stack} tools=${config.tools.join(',')}` },
+    {
+      name: 'config',
+      ok: true,
+      detail: `stack=${config.stack} tier=${tierOf(config)} tools=${config.tools.join(',')}`,
+    },
   ];
   let expectedHash: string | null = null;
   try {
@@ -175,6 +181,7 @@ export const doctor = (
   const athenaRoot = dirname(fileURLToPath(import.meta.url));
   const resolvedPermissionsDir = permissionsDir ?? join(athenaRoot, 'permissions');
   const resolvedCommandsDir = commandsDir ?? join(athenaRoot, 'commands');
+  const tier = tierOf(config);
   if (config.tools.includes('claude')) {
     if (expectedHash !== null) {
       checks.push(freshnessCheck(projectDir, 'CLAUDE.md', expectedHash));
@@ -183,8 +190,8 @@ export const doctor = (
       verbatimCheck(
         projectDir,
         '.claude/settings.json',
-        join(resolvedPermissionsDir, SETTINGS_PROFILE),
-        't1 profile',
+        join(resolvedPermissionsDir, settingsProfileFor(tier)),
+        `the t${tier} profile`,
       ),
     );
     for (const command of COMMANDS) {
@@ -203,8 +210,16 @@ export const doctor = (
       verbatimCheck(
         projectDir,
         '.codex/config.toml',
-        join(resolvedPermissionsDir, CODEX_PROFILE),
-        'the codex profile',
+        join(resolvedPermissionsDir, codexProfileFor(tier)),
+        `the codex t${tier} profile`,
+      ),
+    );
+    checks.push(
+      verbatimCheck(
+        projectDir,
+        '.codex/rules/artemis.rules',
+        join(resolvedPermissionsDir, codexRulesFor(tier)),
+        `the codex t${tier} command rules`,
       ),
     );
   }

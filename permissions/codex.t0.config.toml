@@ -1,0 +1,26 @@
+# Codex permission profile for tier 0, the read-only reviewer. Counterpart to
+# t0.settings.json. compile installs this at .codex/config.toml and doctor checks it
+# byte-for-byte. Read permissions/README.md for what these profiles can and cannot do.
+#
+# t0 maps onto Codex better than any other tier, because "read but never write" is a shape
+# Codex expresses natively via the built-in :read-only permission set rather than something
+# that has to be approximated out of command rules.
+#
+# The secret-file denials still matter here, and arguably matter most: a reviewer agent's
+# entire job is reading, so "read everything except these" is the whole policy.
+
+default_permissions = "artemis-t0"
+approval_policy = "on-request"
+
+[permissions.artemis-t0]
+description = "Artemis reviewer agent: read the workspace, write nothing, never read secrets"
+extends = ":read-only"
+
+[permissions.artemis-t0.filesystem.":workspace_roots"]
+"." = "read"
+"**/*.env" = "deny"
+"**/.env" = "deny"
+"secrets/**" = "deny"
+
+[permissions.artemis-t0.network]
+enabled = false

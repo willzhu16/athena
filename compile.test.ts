@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -62,7 +63,11 @@ describe('compile', () => {
     // .claude/settings.json, no slash commands.
     const { files } = compile({ ...config, tools: ['codex'] }, inputs);
 
-    expect(Object.keys(files).sort()).toEqual(['.codex/config.toml', 'AGENTS.md']);
+    expect(Object.keys(files).sort()).toEqual([
+      '.codex/config.toml',
+      '.codex/rules/artemis.rules',
+      'AGENTS.md',
+    ]);
   });
 
   it('carries a footer hash that matches the compiled body', () => {
@@ -105,7 +110,7 @@ describe('codex outputs', () => {
     // Regression: tool `codex` produced instructions and nothing else, so every generated
     // repo enforced rules for one agent and merely stated them for the other.
     const { files } = compile(config, inputs);
-    const expected = readFileSync(join(permissionsDir, 'codex.config.toml'), 'utf8');
+    const expected = readFileSync(join(permissionsDir, 'codex.t1.config.toml'), 'utf8');
 
     expect(files['.codex/config.toml']).toBe(expected);
   });
@@ -114,5 +119,80 @@ describe('codex outputs', () => {
     const { files } = compile({ ...config, tools: ['claude'] }, inputs);
 
     expect(Object.keys(files).some((name) => name.startsWith('.codex/'))).toBe(false);
+  });
+});
+
+describe('permission tiers', () => {
+  it('installs t1 when no tier is named, so existing repos do not drift', () => {
+    // The whole point of DEFAULT_TIER: before tiers existed every repo got t1, and adding
+    // the field must not change a single already-generated file.
+    const { files } = compile(config, inputs);
+    const t1 = readFileSync(join(permissionsDir, 't1.settings.json'), 'utf8');
+
+    expect(files['.claude/settings.json']).toBe(t1);
+  });
+
+  it.each([0, 2])('installs the t%d profile when the config asks for it', (tier) => {
+    const { files } = compile({ ...config, tier, tools: ['claude'] }, inputs);
+    const expected = readFileSync(join(permissionsDir, `t${tier}.settings.json`), 'utf8');
+
+    expect(files['.claude/settings.json']).toBe(expected);
+  });
+
+  it('names a missing profile instead of falling back to another tier', () => {
+    // All three tiers ship both profiles today, so this points compile at a permissions
+    // directory holding only t1. Silently installing t1 under a tier that promised
+    // something stricter is the failure this guard exists to prevent.
+    const bare = mkdtempSync(join(tmpdir(), 'athena-perms-'));
+    try {
+      writeFileSync(join(bare, 't1.settings.json'), '{}');
+
+      expect(() =>
+        compile({ ...config, tier: 0, tools: ['claude'] }, { ...inputs, permissionsDir: bare }),
+      ).toThrow('permission profile not found: t0.settings.json');
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
+  it.each([3, -1, '1', null])('rejects %p as a tier', (tier) => {
+    expect(() => compile({ ...config, tier } as never, inputs)).toThrow('unknown tier');
+  });
+});
+
+describe('codex command rules', () => {
+  it('installs the tier rules file alongside the codex config', () => {
+    // Codex splits file access and command policy across two files, so one Claude profile
+    // maps onto two Codex outputs. Shipping only the config enforces half the profile.
+    const { files } = compile(config, inputs);
+    const expected = readFileSync(join(permissionsDir, 'codex.t1.rules'), 'utf8');
+
+    expect(files['.codex/rules/artemis.rules']).toBe(expected);
+  });
+
+  it.each([0, 2])('installs the t%d rules for that tier', (tier) => {
+    const { files } = compile({ ...config, tier, tools: ['codex'] }, inputs);
+    const expected = readFileSync(join(permissionsDir, `codex.t${tier}.rules`), 'utf8');
+
+    expect(files['.codex/rules/artemis.rules']).toBe(expected);
+  });
+
+  it('forbids preview deploys at tier 1 and permits them at tier 2', () => {
+    // This is the whole difference between the two tiers, and it lives in the rules file
+    // rather than the config. Asserted on content so a future edit cannot quietly erase it.
+    const t1 = readFileSync(join(permissionsDir, 'codex.t1.rules'), 'utf8');
+    const t2 = readFileSync(join(permissionsDir, 'codex.t2.rules'), 'utf8');
+
+    expect(t1).toContain('pattern = ["wrangler", "versions"]');
+    expect(t2).toContain('pattern = ["wrangler", "versions", "deploy"]');
+    expect(t2).not.toContain('pattern = ["wrangler", "pages", "deploy"]');
+  });
+
+  it('records the force-push prefix gap as a tested not_match', () => {
+    // The hole is real in Codex exactly as in Claude. Writing it down means nobody mistakes
+    // the rule for airtight, and Codex refuses to load the file if it stops being true.
+    const t1 = readFileSync(join(permissionsDir, 'codex.t1.rules'), 'utf8');
+
+    expect(t1).toContain('"git push origin main --force"');
   });
 });

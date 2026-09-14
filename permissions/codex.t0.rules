@@ -1,0 +1,79 @@
+# Artemis tier 0 command rules for Codex. compile installs this at
+# .codex/rules/artemis.rules and doctor checks it byte-for-byte.
+#
+# This is the command half of the profile. codex.t0.config.toml covers which FILES the
+# agent may touch; Codex keeps command policy in a separate Starlark rules file, so one
+# Claude profile maps onto two Codex files.
+#
+# t0 is the reviewer: it reads, and it changes nothing. The :read-only sandbox in the
+# config already blocks writes through the agent's own file tools, but a command can still
+# write — `git commit` and `rm` do not go through those tools. These rules close that.
+#
+# Decisions are allow (default), prompt, or forbidden, and the most restrictive matching
+# rule wins. `match` and `not_match` are inline unit tests: Codex refuses to load the file
+# if a `match` example fails to match, so a rule cannot silently stop working.
+
+prefix_rule(
+    pattern = ["git", ["add", "commit", "push", "merge", "rebase", "reset"]],
+    decision = "forbidden",
+    justification = "A reviewer reads history and never rewrites it. Reading commands stay available.",
+    match = ["git add .", "git commit -m x", "git push", "git merge main", "git rebase main", "git reset --hard"],
+    not_match = ["git status", "git diff", "git log --oneline", "git show HEAD"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", ["create", "merge", "close", "edit"]],
+    decision = "forbidden",
+    justification = "A reviewer comments; it does not open, edit or land pull requests.",
+    match = ["gh pr create", "gh pr merge 42", "gh pr close 42", "gh pr edit 42"],
+    not_match = ["gh pr view 42", "gh pr diff 42", "gh pr list"],
+)
+
+prefix_rule(
+    pattern = ["gh", ["secret", "auth"]],
+    decision = "forbidden",
+    justification = "Secrets and credentials are out of scope; the agent gets names, never values.",
+    match = ["gh secret list", "gh auth token"],
+    not_match = ["gh pr view 1", "gh issue list"],
+)
+
+prefix_rule(
+    pattern = ["wrangler", ["deploy", "versions", "pages", "rollback", "secret"]],
+    decision = "forbidden",
+    justification = "Nothing at tier 0 deploys, promotes, rolls back or touches secrets.",
+    match = ["wrangler deploy", "wrangler versions upload", "wrangler pages deploy", "wrangler rollback", "wrangler secret list"],
+    not_match = ["wrangler dev", "wrangler types"],
+)
+
+prefix_rule(
+    pattern = ["tofu", ["apply", "destroy"]],
+    decision = "forbidden",
+    justification = "Infrastructure changes are not the agent's to make.",
+    match = ["tofu apply", "tofu destroy"],
+    not_match = ["tofu plan"],
+)
+
+prefix_rule(
+    pattern = ["terraform", ["apply", "destroy"]],
+    decision = "forbidden",
+    justification = "Infrastructure changes are not the agent's to make.",
+    match = ["terraform apply", "terraform destroy"],
+    not_match = ["terraform plan"],
+)
+
+prefix_rule(
+    pattern = ["sops", ["-d", "--decrypt", "exec-env"]],
+    decision = "forbidden",
+    justification = "Decrypting secrets puts their values in the model's context.",
+    match = ["sops -d secrets/prod.env", "sops --decrypt secrets/prod.env", "sops exec-env secrets/prod.env env"],
+    # Same prefix limitation the tier 1 rules record: a flag after the filename is missed.
+    not_match = ["sops secrets/prod.env -d"],
+)
+
+prefix_rule(
+    pattern = ["rm"],
+    decision = "forbidden",
+    justification = "A reviewer deletes nothing. The sandbox blocks the agent's file tools; this blocks the shell route.",
+    match = ["rm -rf build", "rm file.txt"],
+    not_match = ["ls", "cat file.txt"],
+)

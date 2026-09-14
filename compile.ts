@@ -20,6 +20,8 @@ export interface AthenaConfig {
   stack: string;
   targets: string[];
   tools: string[];
+  /** Permission tier, 0-2. Omitted means DEFAULT_TIER, so existing repos do not drift. */
+  tier?: number;
   review?: ReviewConfig;
 }
 
@@ -41,16 +43,36 @@ const MARKER = 'ATHENA-COMPILED';
 /** Tools compile knows how to emit files for. An unknown name is a config error, not a fallback. */
 export const KNOWN_TOOLS = ['claude', 'codex'] as const;
 
-/** The permission profile compile installs and doctor verifies — one name, two consumers. */
-export const SETTINGS_PROFILE = 't1.settings.json';
+/**
+ * Permission tiers that exist as files: t0 reviewer (read-only), t1 author, t2 author plus
+ * preview deploys. A repo picks one with `tier` in its config. Adding a tier is adding the
+ * two profile files for it, the same way adding an instruction layer adds a valid stack.
+ */
+export const KNOWN_TIERS = [0, 1, 2] as const;
+
+/** Used when a config names no tier. t1 was the only behaviour before tiers existed, so
+ * defaulting to it means no already-generated repo changes. */
+export const DEFAULT_TIER = 1;
+
+/** The tier a config resolves to. */
+export const tierOf = (config: AthenaConfig): number => config.tier ?? DEFAULT_TIER;
+
+/** Claude permission profile filename for a tier. */
+export const settingsProfileFor = (tier: number): string => `t${tier}.settings.json`;
+
+/** Codex FILE-access profile for a tier, installed at `.codex/config.toml`. */
+export const codexProfileFor = (tier: number): string => `codex.t${tier}.config.toml`;
 
 /**
- * The Codex counterpart, installed at `.codex/config.toml`. Weaker than the Claude profile
- * by Codex's design: it applies only once the human trusts the project, and Codex has no
- * per-command deny list, so it carries the secret-file half of t1 and not the command half.
- * See permissions/README.md.
+ * Codex COMMAND rules for a tier, installed at `.codex/rules/artemis.rules`. Codex keeps
+ * command policy in a separate Starlark file from file access, so one Claude profile maps
+ * onto two Codex outputs. Named `artemis.rules` in the target so it cannot collide with a
+ * rules file the repo's owner writes themselves.
  */
-export const CODEX_PROFILE = 'codex.config.toml';
+export const codexRulesFor = (tier: number): string => `codex.t${tier}.rules`;
+
+/** The default profile name, kept for callers that only care about the shipped default. */
+export const SETTINGS_PROFILE = settingsProfileFor(DEFAULT_TIER);
 
 /**
  * Slash commands compile installs verbatim into `.claude/commands/` and doctor verifies.
@@ -90,6 +112,12 @@ export function validateConfig(value: unknown): asserts value is AthenaConfig {
     }
   }
   if (new Set(tools).size !== tools.length) fail('"tools" must be unique');
+  if (config.tier !== undefined) {
+    const tier = config.tier;
+    if (typeof tier !== 'number' || !(KNOWN_TIERS as readonly number[]).includes(tier)) {
+      fail(`unknown tier "${String(tier)}" — known tiers: ${KNOWN_TIERS.join(', ')}`);
+    }
+  }
 }
 
 /** Instruction layer filenames for a config, in canonical merge order (numeric prefix). */
@@ -107,6 +135,19 @@ const readLayer = (instructionsDir: string, name: string): string => {
     throw new Error(`athena: instruction layer not found: ${name}`);
   }
   return readFileSync(path, 'utf8').trimEnd();
+};
+
+/**
+ * Read a permission profile, naming it when absent. Only t1 ships a Codex profile today, so
+ * `tier: 0` plus tool `codex` must fail loudly rather than install t1's permissions under a
+ * tier that promised something stricter.
+ */
+const readProfile = (permissionsDir: string, name: string): string => {
+  const path = join(permissionsDir, name);
+  if (!existsSync(path)) {
+    throw new Error(`athena: permission profile not found: ${name}`);
+  }
+  return readFileSync(path, 'utf8');
 };
 
 /** Concatenate the selected layers and the per-repo project layer into the compiled body. */
@@ -150,13 +191,11 @@ export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOu
   const hash = computeHash(body);
   const compiled = render(config, body, hash);
   const files: Record<string, string> = {};
+  const tier = tierOf(config);
   for (const tool of config.tools) {
     if (tool === 'claude') {
       files['CLAUDE.md'] = compiled;
-      files['.claude/settings.json'] = readFileSync(
-        join(inputs.permissionsDir, SETTINGS_PROFILE),
-        'utf8',
-      );
+      files['.claude/settings.json'] = readProfile(inputs.permissionsDir, settingsProfileFor(tier));
       for (const command of COMMANDS) {
         files[`.claude/commands/${command}`] = readFileSync(
           join(inputs.commandsDir, command),
@@ -165,10 +204,8 @@ export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOu
       }
     } else if (tool === 'codex') {
       files['AGENTS.md'] = compiled;
-      files['.codex/config.toml'] = readFileSync(
-        join(inputs.permissionsDir, CODEX_PROFILE),
-        'utf8',
-      );
+      files['.codex/config.toml'] = readProfile(inputs.permissionsDir, codexProfileFor(tier));
+      files['.codex/rules/artemis.rules'] = readProfile(inputs.permissionsDir, codexRulesFor(tier));
     }
   }
   return { hash, body, files };
