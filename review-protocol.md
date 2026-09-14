@@ -22,7 +22,11 @@ its own taste.
 **Blocking findings:**
 
 1. A new dependency introduced without human acknowledgment.
-2. An acceptance criterion with no covering test.
+2. An acceptance criterion with no covering test. **This one is now mechanical**:
+   `pnpm acceptance` fails the build for it, so a reviewer should never be the first
+   thing to notice it. Criteria carry ids and tests claim them by name — see
+   `task-packet.md`. A reviewer finding this by eye means the gate was not run or the
+   criterion has no id.
 3. Demonstrated correctness or security defects introduced or exposed by the change,
    including regressions, data loss, or violations of the packet's constraints. Cite a
    concrete failure scenario and evidence; a speculative concern is not a blocker.

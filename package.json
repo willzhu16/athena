@@ -7,11 +7,12 @@
   "scripts": {
     "lint": "biome ci .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --coverage",
+    "test": "vitest run --coverage --reporter=default --reporter=json --outputFile=reports/tests.json",
     "test:mutation": "stryker run",
     "compile": "tsx compile.ts",
     "doctor": "tsx doctor.ts",
-    "harness-lint": "tsx harness-lint.ts"
+    "harness-lint": "tsx harness-lint.ts",
+    "acceptance": "tsx acceptance.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
