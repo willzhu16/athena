@@ -166,14 +166,35 @@ export const budgetCheck = (costs: BundleCost[]): Finding => {
   };
 };
 
-/** Strip list markers and inline emphasis so two spellings of one rule compare equal. */
-export const normalizeLine = (line: string): string =>
+const normalizeOnce = (line: string): string =>
   line
     .replace(/^[\s>]*(?:[-*+]|\d+\.)\s+/, '')
     .replace(/[`*_]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+
+/**
+ * Strip list markers and inline emphasis so two spellings of one rule compare equal.
+ *
+ * Applied to a fixed point rather than once, because removing emphasis can expose a list
+ * marker that was hidden underneath it: `_1. never force-push_` came out as
+ * `1. never force-push` while its plain twin came out as `never force-push`, so the two
+ * spellings of one rule did not compare equal and the duplicate went unreported. Found by
+ * the idempotence property in properties.test.ts.
+ *
+ * Terminates: after the first pass no emphasis characters remain, so every later pass can
+ * only shorten the line.
+ */
+export const normalizeLine = (line: string): string => {
+  let current = normalizeOnce(line);
+  let next = normalizeOnce(current);
+  while (next !== current) {
+    current = next;
+    next = normalizeOnce(current);
+  }
+  return current;
+};
 
 const meaningfulLines = (text: string): string[] =>
   text

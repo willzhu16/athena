@@ -28,6 +28,7 @@ import {
   harnessLint,
   isOrderSensitive,
   main,
+  normalizeLine,
   printReport,
   readCoherence,
   readProfile,
@@ -983,5 +984,19 @@ describe('the CLI verdict', () => {
     expect(anyFailed([pass, pass])).toBe(false);
     expect(anyFailed([pass, fail])).toBe(true);
     expect(anyFailed([fail])).toBe(true);
+  });
+});
+
+describe('rule-line normalisation', () => {
+  it('strips a list marker that was hidden under emphasis', () => {
+    // Regression: normalisation ran one pass, so removing the underscores exposed a `1.`
+    // that then stayed in the text. The italicised rule and its plain twin normalised to
+    // different strings and the duplicate went unreported.
+    expect(normalizeLine('_1. Never force-push_')).toBe(normalizeLine('1. Never force-push'));
+    expect(normalizeLine('_1. Never force-push_')).toBe('never force-push');
+  });
+
+  it('leaves an already-normalised line alone', () => {
+    expect(normalizeLine('never force-push')).toBe('never force-push');
   });
 });
