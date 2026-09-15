@@ -6,17 +6,17 @@
   "bundles": {
     "worstCase": {
       "config": "ts+vscode-ext+workers",
-      "estimatedTokens": 3438
+      "estimatedTokens": 3597
     },
     "perConfig": {
-      "python+none": 2451,
-      "python+vscode-ext": 2882,
-      "python+workers": 2961,
-      "python+vscode-ext+workers": 3392,
-      "ts+none": 2496,
-      "ts+vscode-ext": 2928,
-      "ts+workers": 3006,
-      "ts+vscode-ext+workers": 3438
+      "python+none": 2610,
+      "python+vscode-ext": 3042,
+      "python+workers": 3120,
+      "python+vscode-ext+workers": 3552,
+      "ts+none": 2655,
+      "ts+vscode-ext": 3087,
+      "ts+workers": 3165,
+      "ts+vscode-ext+workers": 3597
     }
   },
   "commands": {

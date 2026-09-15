@@ -35,14 +35,16 @@ Applies to every repo and every tool.
 
 Done means every item in the handbook definition-of-done, in particular:
 
-- All CI gates green: lint, typecheck, tests (spec 01), gitleaks, semgrep, osv (spec 02).
+- All CI gates green: lint, typecheck, tests (spec 01), gitleaks, semgrep, osv (spec 02),
+  plus coverage, mutation, acceptance and smoke where the repo runs them.
 - A new test that **fails without your change** covers the behaviour (regression rule).
 - Behaviour verified by actually running it — green tests prove the tests pass, not that
   the feature works. Include the evidence (command output, transcript) in the PR.
 - Docs updated in the same PR (README / runbooks / ADR as applicable); no debug logging,
   commented-out code, or stray TODOs left in the diff.
 
-See the [definition of done](https://github.com/willzhu16/platform/blob/v1/handbook/definition-of-done.md).
+See the [definition of done](https://github.com/willzhu16/platform/blob/v1/handbook/definition-of-done.md)
+and the [testing standard](https://github.com/willzhu16/platform/blob/v1/handbook/testing-standard.md).
 
 ## Tests come first
 
@@ -53,7 +55,13 @@ See the [definition of done](https://github.com/willzhu16/platform/blob/v1/handb
   `rejects an expired token`, not `tests validate()`. Read in order, a file's test names
   should read as that module's specification.
 - A test that has never failed has proven nothing. If it passed before your change, it is
-  not covering your change — make it fail on purpose once before you trust it.
+  not covering your change — make it fail on purpose once before you trust it. The mutation
+  gate enforces exactly that, so a test asserting nothing fails the build.
+- **Criteria carry ids and tests claim them.** The packet numbers each criterion
+  (`- AC-1: ...`); a test claims one by putting `AC-1:` in its name. The colon marks a
+  claim — mentioning an id covers nothing. A criterion checkable only by hand gets no id;
+  say in the PR how you checked it.
+- Never lower a coverage or mutation floor to go green; add the missing test.
 
 ## Honesty
 
