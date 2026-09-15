@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Coverage says a line ran. Mutation says a test would have noticed if it were wrong. The break threshold is a ratchet: set to the measured score minus a little slack, raised when the score rises, never lowered to make a red build green.",
+  "packageManager": "pnpm",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "mutate": ["compile.ts", "doctor.ts", "harness-lint.ts", "acceptance.ts"],
+  "reporters": ["clear-text", "progress", "json"],
+  "jsonReporter": {
+    "fileName": "reports/mutation.json"
+  },
+  "coverageAnalysis": "perTest",
+  "thresholds": {
+    "high": 95,
+    "low": 85,
+    "break": 85
+  }
+}

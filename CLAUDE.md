@@ -72,6 +72,20 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 - One file: `pnpm exec vitest run doctor.test.ts`
 - `pnpm harness-lint` — no arguments; checks athena's own layers, profiles and commands.
 - `pnpm harness-lint --write` — regenerate `harness-scorecard.json`, then commit the diff.
+- `pnpm test:mutation` — Stryker: rewrites the source a thousand ways and reports how many
+  of those edits a test caught. ~50 s. Fails under `thresholds.break` in
+  `stryker.config.json` (85; measured 86.73 on 2026-09-14). Treat the number as a ratchet:
+  raise it when it rises, never lower it to turn a red build green. Survivors that no test
+  can kill carry a `// Stryker disable next-line all` comment saying why.
+- `pnpm acceptance <packet.md> <report.json>` — fails the build for any acceptance
+  criterion with no passing test. Criteria carry ids (`- AC-1: ...`); a test claims one
+  by writing `AC-1:` in its name. `pnpm test` writes `reports/tests.json` for it, and
+  `check.ps1` runs it against `packets/acceptance-gate.md` — athena's own packet, kept
+  as the worked example. Mechanises blocking finding 2 of `review-protocol.md`.
+- Property tests live in `properties.test.ts` (fast-check), separate from the per-module
+  test files because the seed is configured once there and the invariants span modules.
+  **The seed is pinned** — a random one would move the mutation score between runs and
+  make a failure unreproducible. Explore by raising `numRuns`, not by unpinning.
 - `pnpm compile <dir>` / `pnpm doctor <dir>` — never point compile at a repo you don't
   intend to modify, and never at `../platform/templates/*` (it would dump rendered output
   into jinja sources).

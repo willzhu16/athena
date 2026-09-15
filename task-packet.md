@@ -17,8 +17,21 @@ If you cannot fill every field, the work is not ready to delegate: go back to th
   field means the packet is not ready. This is the highest-value field for bounding an agent.
 
 **Acceptance criteria**
-: Observable, checkable statements. Each maps to a test where possible, or a documented
-  manual check. "Done" is demonstrated against these, one by one.
+: Observable, checkable statements, **each given a stable id**: `- AC-1: ...`. A test claims
+  a criterion by writing that id followed by a colon in its name, on the `it` or on a
+  `describe` around several:
+
+      it('AC-1: reports drift when .athena/project.md is edited without recompiling', ...)
+
+  The colon is what separates a claim from a mention, so a test that merely discusses AC-10
+  is not counted as covering it. `pnpm acceptance <packet> <test-report>` then fails the
+  build for any criterion with no passing test, any test claiming an id the packet dropped,
+  any reused id, and any packet with no criteria at all. `packets/acceptance-gate.md` is a
+  worked example. "Done" is no longer demonstrated one by one by a person — it is checked.
+
+  A criterion that genuinely cannot be tested (a manual check) still needs saying out loud:
+  write it without an id so the gate does not claim it is covered, and say in the PR how it
+  was verified.
 
 **Constraints**
 : Applicable ADRs / DECISIONS entries by ID; performance and security notes; anything the
@@ -30,7 +43,8 @@ If you cannot fill every field, the work is not ready to delegate: go back to th
 
 **Done means**
 : "All checks in spec 01/02 are green and every acceptance criterion is demonstrated"
-  (default). Add anything project-specific.
+  (default) — and `acceptance / acceptance` is green, which is that second half made
+  mechanical. Add anything project-specific.
 
 ---
 

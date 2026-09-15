@@ -231,7 +231,7 @@ export const writeOutputs = (projectDir: string, outputs: CompiledOutputs): stri
   return written;
 };
 
-const main = (): void => {
+export const main = (): void => {
   const athenaDir = dirname(fileURLToPath(import.meta.url));
   const projectDir = process.argv[2] ?? process.cwd();
   const outputs = compile(readConfig(projectDir), {
@@ -246,6 +246,9 @@ const main = (): void => {
   );
 };
 
+// The CLI entry guard cannot be exercised from a test: the test runner is always
+// argv[1], never this module. Excluded so the score measures testable logic.
+// Stryker disable next-line all
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main();
 }

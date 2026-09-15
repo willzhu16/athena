@@ -166,14 +166,35 @@ export const budgetCheck = (costs: BundleCost[]): Finding => {
   };
 };
 
-/** Strip list markers and inline emphasis so two spellings of one rule compare equal. */
-export const normalizeLine = (line: string): string =>
+const normalizeOnce = (line: string): string =>
   line
     .replace(/^[\s>]*(?:[-*+]|\d+\.)\s+/, '')
     .replace(/[`*_]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+
+/**
+ * Strip list markers and inline emphasis so two spellings of one rule compare equal.
+ *
+ * Applied to a fixed point rather than once, because removing emphasis can expose a list
+ * marker that was hidden underneath it: `_1. never force-push_` came out as
+ * `1. never force-push` while its plain twin came out as `never force-push`, so the two
+ * spellings of one rule did not compare equal and the duplicate went unreported. Found by
+ * the idempotence property in properties.test.ts.
+ *
+ * Terminates: after the first pass no emphasis characters remain, so every later pass can
+ * only shorten the line.
+ */
+export const normalizeLine = (line: string): string => {
+  let current = normalizeOnce(line);
+  let next = normalizeOnce(current);
+  while (next !== current) {
+    current = next;
+    next = normalizeOnce(current);
+  }
+  return current;
+};
 
 const meaningfulLines = (text: string): string[] =>
   text
@@ -789,7 +810,13 @@ export const writeScorecard = (athenaRoot: string, scorecard: Scorecard): string
   return path;
 };
 
-const printReport = (report: HarnessReport): void => {
+/**
+ * The CLI's verdict. Exported because it is the enforcement: `main` runs only against
+ * athena's own layers, so this rule is the one part of the exit path a test can reach.
+ */
+export const anyFailed = (findings: Finding[]): boolean => findings.some((finding) => !finding.ok);
+
+export const printReport = (report: HarnessReport): void => {
   for (const finding of report.findings) {
     console.log(`${finding.ok ? 'PASS' : 'FAIL'}  ${finding.name} — ${finding.detail}`);
   }
@@ -829,7 +856,7 @@ const printReport = (report: HarnessReport): void => {
   }
 };
 
-const main = (): void => {
+export const main = (): void => {
   const athenaDir = dirname(fileURLToPath(import.meta.url));
   const report = harnessLint(join(athenaDir, 'instructions'), join(athenaDir, 'permissions'));
   // --write regenerates the committed scorecard, so the numbers land in the PR diff rather
@@ -847,11 +874,14 @@ const main = (): void => {
     ? harnessLint(join(athenaDir, 'instructions'), join(athenaDir, 'permissions'))
     : report;
   printReport(final);
-  if (final.findings.some((finding) => !finding.ok)) {
+  if (anyFailed(final.findings)) {
     process.exitCode = 1;
   }
 };
 
+// The CLI entry guard cannot be exercised from a test: the test runner is always
+// argv[1], never this module. Excluded so the score measures testable logic.
+// Stryker disable next-line all
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main();
 }

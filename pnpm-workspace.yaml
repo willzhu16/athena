@@ -2,3 +2,11 @@
 # install script to run; tsx and vitest depend on it.
 allowBuilds:
   esbuild: true
+
+# qs below 6.16.0 carries three medium advisories (GHSA-4mjr-xmp4-gh2g,
+# GHSA-q8mj-m7cp-5q26, GHSA-x5fp-wj9c-mxmx) and reaches us transitively through
+# @stryker-mutator/core -> typed-rest-client. Nothing here parses untrusted query strings,
+# but `security / osv` gates the build and an unpatched advisory should not sit in the
+# lockfile. Drop this once Stryker pulls a fixed typed-rest-client on its own.
+overrides:
+  qs: '>=6.16.0'

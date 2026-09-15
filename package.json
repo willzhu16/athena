@@ -7,15 +7,20 @@
   "scripts": {
     "lint": "biome ci .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --coverage",
+    "test": "vitest run --coverage --reporter=default --reporter=json --outputFile=reports/tests.json",
+    "test:mutation": "stryker run",
     "compile": "tsx compile.ts",
     "doctor": "tsx doctor.ts",
-    "harness-lint": "tsx harness-lint.ts"
+    "harness-lint": "tsx harness-lint.ts",
+    "acceptance": "tsx acceptance.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "^24.13.4",
     "@vitest/coverage-v8": "^4.1.11",
+    "fast-check": "^4.10.0",
     "tsx": "^4.23.13",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11"
