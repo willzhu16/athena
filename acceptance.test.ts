@@ -383,3 +383,77 @@ describe('the passing findings say what passed', () => {
     expect(detail('no stale criterion references')).toBe('every id a test names is in the packet');
   });
 });
+
+describe('reading a pytest report', () => {
+  /** What `pytest --json-report` (pytest-json-report) writes. */
+  const pytestReport = (tests: [string, string][]): string =>
+    JSON.stringify({
+      tests: tests.map(([nodeid, outcome]) => ({ nodeid, outcome })),
+      summary: { total: tests.length },
+    });
+
+  it('AC-7: reads a pytest report as readily as a vitest one', () => {
+    // Shape detection rather than configuration: a repo declaring its runner in a second
+    // place is a declaration that can drift from the truth.
+    const outcomes = parseTestReport(
+      pytestReport([
+        ['tests/test_auth.py::test_ac_1_rejects_an_expired_token', 'passed'],
+        ['tests/test_auth.py::test_retries_three_times', 'failed'],
+      ]),
+    );
+
+    expect(outcomes).toEqual([
+      { name: 'tests/test_auth.py::test_ac_1_rejects_an_expired_token', passed: true },
+      { name: 'tests/test_auth.py::test_retries_three_times', passed: false },
+    ]);
+  });
+
+  it('counts only an outright pass, so xfail and skip are not evidence', () => {
+    const outcomes = parseTestReport(
+      pytestReport([
+        ['tests/test_a.py::test_one', 'skipped'],
+        ['tests/test_a.py::test_two', 'xfailed'],
+        ['tests/test_a.py::test_three', 'error'],
+      ]),
+    );
+
+    expect(outcomes.every((outcome) => !outcome.passed)).toBe(true);
+  });
+
+  it('survives a pytest report whose entries carry no nodeid', () => {
+    expect(parseTestReport(JSON.stringify({ tests: [{ outcome: 'passed' }] }))).toEqual([
+      { name: '', passed: true },
+    ]);
+  });
+
+  it('AC-8: lets a pytest test claim a criterion in identifier spelling', () => {
+    // Python cannot put `-` or `:` in a function name, so the claim is `ac_1_`. One concept,
+    // two spellings, each idiomatic where it is used.
+    const criteria: Criterion[] = [{ id: 'AC-1', text: 'rejects an expired token' }];
+    const outcomes = parseTestReport(
+      pytestReport([['tests/test_auth.py::test_ac_1_rejects_an_expired_token', 'passed']]),
+    );
+
+    expect(coverageChecks(criteria, outcomes)[0]?.ok).toBe(true);
+    expect(staleReferences(criteria, outcomes)).toEqual([]);
+  });
+
+  it('AC-9: does not let an id inside a longer word claim anything', () => {
+    // Without a boundary, `test_mac_10_thing` claims AC-10 and `MAC-1:` claims AC-1.
+    const criteria: Criterion[] = [{ id: 'AC-10', text: 'the tenth thing' }];
+    const outcomes = parseTestReport(
+      pytestReport([['tests/test_net.py::test_mac_10_address_parses', 'passed']]),
+    );
+
+    expect(coverageChecks(criteria, outcomes)[0]?.ok).toBe(false);
+    expect(staleReferences([], [{ name: 'MAC-1: not a claim', passed: true }])).toEqual([]);
+  });
+
+  it('still claims from an uppercase dash form, so TypeScript is unchanged', () => {
+    const criteria: Criterion[] = [{ id: 'AC-3', text: 'x' }];
+
+    expect(coverageChecks(criteria, [{ name: 'AC-3: does the thing', passed: true }])[0]?.ok).toBe(
+      true,
+    );
+  });
+});
