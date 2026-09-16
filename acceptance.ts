@@ -41,10 +41,20 @@ const CRITERION_LINE = /^\s*(?:[-*+]\s*)?(?:\[[ xX]?\]\s*)?(AC-\d+)\s*(?:[:.â€“â
 /**
  * The criterion ids a test name *claims*, which is not the same as the ids it mentions. A
  * claim is written `AC-1:`; a name that merely refers to an id in prose ("AC-10 is not
- * evidence for AC-1") claims nothing. Dogfooding found this: without the colon, a test
+ * evidence for AC-1") claims nothing. Dogfooding found this: without the separator, a test
  * explaining a criterion was read as covering it.
+ *
+ * `ac_1_` is the same claim spelled for a language whose test names are identifiers. Python
+ * cannot put `-` or `:` in a function name, so `def test_ac_1_rejects_expired_token` is how
+ * a pytest test claims AC-1. One concept, two spellings, each idiomatic where it is used.
+ *
+ * The lookbehind is load-bearing: without it `test_mac_10_thing` claims AC-10, and on the
+ * TypeScript side `MAC-1:` claims AC-1.
  */
-const claimedIds = (text: string): string[] => text.match(/AC-\d+(?=:)/g) ?? [];
+const CLAIM = /(?<![A-Za-z0-9])AC[-_](\d+)(?=[:_])/gi;
+
+const claimedIds = (text: string): string[] =>
+  [...text.matchAll(CLAIM)].map((match) => `AC-${match[1]}`);
 
 /**
  * Read the criteria out of a task packet. Accepts the whole packet, not just its acceptance
@@ -67,16 +77,38 @@ interface AssertionResult {
   status?: string;
 }
 
+interface PytestTest {
+  nodeid?: string;
+  outcome?: string;
+}
+
 interface TestReport {
+  /** vitest --reporter=json */
   testResults?: { assertionResults?: AssertionResult[] }[];
+  /** pytest --json-report (pytest-json-report) */
+  tests?: PytestTest[];
 }
 
 /**
- * Flatten vitest's JSON reporter into name/passed pairs. `fullName` is used rather than
- * `title` so a criterion id may sit on the `describe` and cover every test inside it.
+ * Flatten a test report into name/passed pairs, from either runner.
+ *
+ * vitest: `fullName` is used rather than `title` so a criterion id may sit on the `describe`
+ * and cover every test inside it. pytest: the `nodeid` carries file and function
+ * (`tests/test_auth.py::test_ac_1_rejects_expired_token`), so the claim is in it either way.
+ *
+ * The shape is detected rather than configured. A repo should not have to declare which
+ * runner it uses in a second place that can drift from the truth.
  */
 export const parseTestReport = (json: string): TestOutcome[] => {
   const report = JSON.parse(json) as TestReport;
+  if (Array.isArray(report.tests)) {
+    return report.tests.map((test) => ({
+      name: test.nodeid ?? '',
+      // pytest also reports 'failed', 'skipped', 'xfailed' and 'error'. Only an outright
+      // pass is evidence, for the same reason a skipped vitest test is not.
+      passed: test.outcome === 'passed',
+    }));
+  }
   const outcomes: TestOutcome[] = [];
   for (const file of report.testResults ?? []) {
     for (const assertion of file.assertionResults ?? []) {
@@ -195,7 +227,7 @@ export const anyFailed = (findings: Finding[]): boolean => findings.some((findin
 export const main = (): void => {
   const [packetPath, reportPath] = process.argv.slice(2);
   if (!packetPath || !reportPath) {
-    console.log('usage: athena acceptance <packet.md> <vitest-report.json>');
+    console.log('usage: athena acceptance <packet.md> <test-report.json>');
     process.exitCode = 1;
     return;
   }

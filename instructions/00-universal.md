@@ -56,11 +56,11 @@ and the [testing standard](https://github.com/willzhu16/platform/blob/v1/handboo
   should read as that module's specification.
 - A test that has never failed has proven nothing. If it passed before your change, it is
   not covering your change — make it fail on purpose once before you trust it. The mutation
-  gate enforces exactly that, so a test asserting nothing fails the build.
+  gate enforces that: a test asserting nothing fails the build.
 - **Criteria carry ids and tests claim them.** The packet numbers each criterion
-  (`- AC-1: ...`); a test claims one by putting `AC-1:` in its name. The colon marks a
-  claim — mentioning an id covers nothing. A criterion checkable only by hand gets no id;
-  say in the PR how you checked it.
+  (`- AC-1: ...`); a test claims one by naming it — `AC-1:`, or `test_ac_1_...` where names
+  must be identifiers. Mentioning an id covers nothing. A criterion checkable only by hand
+  gets no id; say in the PR how you checked it.
 - Never lower a coverage or mutation floor to go green; add the missing test.
 
 ## Honesty
