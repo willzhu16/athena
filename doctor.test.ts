@@ -540,15 +540,21 @@ describe('doctor (reformatting a settings file is not tampering)', () => {
   });
 });
 
-/** Run doctor's CLI in-process, capturing what it printed and the exit code it set. */
-const runCli = (projectDir: string): { lines: string[]; exitCode: number | string | undefined } => {
+/**
+ * Run doctor's CLI in-process, capturing what it printed and the exit code it set. Omit the
+ * directory to exercise the no-argument form, which falls back to the working directory.
+ */
+const runCli = (
+  projectDir?: string,
+): { lines: string[]; exitCode: number | string | undefined } => {
   const lines: string[] = [];
   const log = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
     lines.push(String(line));
   });
   const originalArgv = process.argv;
   const originalExitCode = process.exitCode;
-  process.argv = ['node', 'doctor.ts', projectDir];
+  process.argv =
+    projectDir === undefined ? ['node', 'doctor.ts'] : ['node', 'doctor.ts', projectDir];
   process.exitCode = undefined;
   try {
     main();
@@ -586,6 +592,24 @@ describe('doctor CLI (the exit code is the enforcement, not the printout)', () =
       expect(lines).toHaveLength(8);
       expect(lines[0]).toBe('PASS  config — stack=ts tier=1 tools=claude,codex');
       expect(lines[1]).toBe('FAIL  CLAUDE.md — missing — run `athena compile`');
+    });
+  });
+
+  it('checks the working directory when no path is given', () => {
+    // athena-sync runs `athena doctor` from inside the repo it is checking, with no
+    // argument. Were the fallback wrong, the weekly sync would report on the wrong repo.
+    // cwd is stubbed rather than really changed, because the mutation runner's test workers
+    // cannot chdir.
+    withProject(bothTools, (projectDir) => {
+      const cwd = vi.spyOn(process, 'cwd').mockReturnValue(projectDir);
+      try {
+        const { lines, exitCode } = runCli();
+
+        expect(exitCode).toBeUndefined();
+        expect(lines[0]).toBe('PASS  config — stack=ts tier=1 tools=claude,codex');
+      } finally {
+        cwd.mockRestore();
+      }
     });
   });
 });

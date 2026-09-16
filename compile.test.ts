@@ -80,6 +80,12 @@ describe('compile', () => {
     expect(computeHash(extractBody(claude))).toBe(hash);
   });
 
+  it('reads no hash out of a file that was never compiled', () => {
+    // doctor reads null as "not an athena artifact" and falls back to a presence check.
+    // Any other answer would report a hand-written CLAUDE.md as drifted.
+    expect(readDeclaredHash('# CLAUDE.md\n\nhand-written, no header\n')).toBeNull();
+  });
+
   it('ships the T1 permission profile for the claude tool', () => {
     const { files } = compile(config, inputs);
     const expected = readFileSync(join(permissionsDir, 't1.settings.json'), 'utf8');
@@ -371,6 +377,58 @@ describe('compile CLI', () => {
       expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('ship on Fridays');
     } finally {
       process.argv = originalArgv;
+      log.mockRestore();
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('compiles a project that has not written a project layer', () => {
+    // .athena/project.md is optional: a freshly scaffolded repo has none yet, and it has to
+    // compile to exactly what an empty project layer produces rather than fail on ENOENT.
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-compile-'));
+    const originalArgv = process.argv;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const bare: AthenaConfig = { athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claude'] };
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      writeFileSync(join(projectDir, '.athena', 'config.json'), JSON.stringify(bare));
+      process.argv = ['node', 'compile.ts', projectDir];
+
+      main();
+
+      const expected = compile(bare, { ...inputs, projectLayer: '' }).files['CLAUDE.md'];
+      expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toBe(expected);
+    } finally {
+      process.argv = originalArgv;
+      log.mockRestore();
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('compiles the working directory when no path is given', () => {
+    // How athena-sync runs it: cd into the repo, then `athena compile` with no argument.
+    // Defaulting to the wrong directory would write a repo's rules into someone else's.
+    // cwd is stubbed rather than really changed, because the mutation runner's test workers
+    // cannot chdir.
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-compile-'));
+    const originalArgv = process.argv;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const cwd = vi.spyOn(process, 'cwd').mockReturnValue(projectDir);
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({ athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claude'] }),
+      );
+      writeFileSync(join(projectDir, '.athena', 'project.md'), '# Project\n\nno argument\n');
+      process.argv = ['node', 'compile.ts'];
+
+      main();
+
+      expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('no argument');
+    } finally {
+      process.argv = originalArgv;
+      cwd.mockRestore();
       log.mockRestore();
       rmSync(projectDir, { recursive: true, force: true });
     }

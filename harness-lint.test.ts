@@ -19,6 +19,7 @@ import {
   commandCosts,
   commandCrossLinkCheck,
   commandDuplicateCheck,
+  commandEchoes,
   commandFrontmatterChecks,
   commandsManifestCheck,
   denySoundnessChecks,
@@ -169,6 +170,28 @@ describe('rulebook / permission coherence', () => {
       }
     },
   );
+
+  it('rejects a denied claim with no deniedIn list instead of throwing on it', () => {
+    // readCoherence rejects this shape on the way in, but claimChecks is exported and
+    // callable on its own. It has to report the gap the way every other finding does,
+    // because a claim with no profile behind it is a wall nobody is enforcing.
+    const layers = scratchDir({ 'security.md': 'Do not run gh secret.' });
+    const perms = scratchDir({ 't9.settings.json': profile(['Bash(gh secret:*)']) });
+    const noProfiles = {
+      command: 'gh secret',
+      statedIn: ['security.md'],
+      enforcement: 'denied',
+    } as CoherenceClaim;
+    try {
+      const [finding] = claimChecks([noProfiles], layers, perms);
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toBe('denied claim needs at least one permission profile');
+    } finally {
+      rmSync(layers, { recursive: true, force: true });
+      rmSync(perms, { recursive: true, force: true });
+    }
+  });
 
   const denied: CoherenceClaim = {
     command: 'sops -d',
@@ -480,6 +503,52 @@ describe('slash commands', () => {
       expect(cost?.estimatedTokens).toBeGreaterThan(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prices nothing when the commands directory does not exist', () => {
+    // harness-lint reports and never throws. A repo that has not added commands yet still
+    // has to lint, with the missing directory surfacing as a failed manifest check instead.
+    const dir = scratchDir({ 'placeholder.md': 'not the commands directory' });
+    try {
+      expect(commandCosts(join(dir, 'commands'))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a line a command shares with an instruction layer', () => {
+    // A command and a layer that state the same rule drift in pairs: edit one copy and the
+    // other goes stale. This list is the only thing that notices.
+    const shared = 'Stop and get the packet split approved before you start.';
+    const layers = scratchDir({ '00-universal.md': `# Universal\n\n- ${shared}\n` });
+    const commands = scratchDir({
+      'conductor.md': command('Run the conductor', `${shared}\n`),
+    });
+    try {
+      const echoes = commandEchoes(layers, commands);
+
+      expect(echoes).toHaveLength(1);
+      expect(echoes[0]?.line).toBe(normalizeLine(shared));
+      expect(echoes[0]?.layers).toEqual(['commands/conductor.md', '00-universal.md']);
+    } finally {
+      rmSync(layers, { recursive: true, force: true });
+      rmSync(commands, { recursive: true, force: true });
+    }
+  });
+
+  it('reports nothing when no command line appears in a layer', () => {
+    // The other half of the pair: an echo list that fires on unrelated text would be noise
+    // nobody reads, and the real echo would be lost in it.
+    const layers = scratchDir({
+      '00-universal.md': '# Universal\n\nNothing in common here.\n',
+    });
+    const commands = scratchDir({ 'conductor.md': command('Run the conductor') });
+    try {
+      expect(commandEchoes(layers, commands)).toEqual([]);
+    } finally {
+      rmSync(layers, { recursive: true, force: true });
+      rmSync(commands, { recursive: true, force: true });
     }
   });
 });

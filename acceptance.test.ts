@@ -80,6 +80,34 @@ describe('reading the test report', () => {
   it('survives a report with no results at all', () => {
     expect(parseTestReport('{}')).toEqual([]);
   });
+
+  it('reads a file entry that reported no assertions as zero tests', () => {
+    // A suite that failed to load still lands in the report, with no assertionResults at
+    // all. Reading it as zero tests keeps the gate running instead of crashing the check.
+    expect(parseTestReport(JSON.stringify({ testResults: [{}] }))).toEqual([]);
+  });
+
+  it('falls back to the title when the reporter emitted no full name', () => {
+    // Without the fallback the name is empty, the test matches no criterion, and a packet
+    // that is genuinely covered reports as uncovered.
+    const outcomes = parseTestReport(
+      JSON.stringify({
+        testResults: [{ assertionResults: [{ title: 'reports drift', status: 'passed' }] }],
+      }),
+    );
+
+    expect(outcomes).toEqual([{ name: 'reports drift', passed: true }]);
+  });
+
+  it('keeps a nameless assertion, so the reported test count stays honest', () => {
+    // The count is how a reviewer sees the report was read at all. An empty name claims no
+    // criterion, so keeping the entry cannot make an uncovered packet look covered.
+    const outcomes = parseTestReport(
+      JSON.stringify({ testResults: [{ assertionResults: [{ status: 'passed' }] }] }),
+    );
+
+    expect(outcomes).toEqual([{ name: '', passed: true }]);
+  });
 });
 
 describe('criterion coverage', () => {
