@@ -1,28 +1,37 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type AcknowledgedDeny,
+  anyFailed,
   BUNDLE_TOKEN_BUDGET,
   type BundleCost,
   bashCommand,
   budgetCheck,
   bundleCosts,
+  COHERENCE_FILE,
   type CoherenceClaim,
+  type CoherenceFile,
   claimChecks,
   codexSecretsCheck,
   commandCosts,
   commandCrossLinkCheck,
   commandDuplicateCheck,
+  commandEchoes,
   commandFrontmatterChecks,
   commandsManifestCheck,
   denySoundnessChecks,
   duplicateCheck,
   duplicateLines,
+  type HarnessReport,
   harnessLint,
   isOrderSensitive,
+  main,
+  normalizeLine,
+  printReport,
+  readCoherence,
   readProfile,
   SCORECARD_FILE,
   scorecardCheck,
@@ -161,6 +170,28 @@ describe('rulebook / permission coherence', () => {
       }
     },
   );
+
+  it('rejects a denied claim with no deniedIn list instead of throwing on it', () => {
+    // readCoherence rejects this shape on the way in, but claimChecks is exported and
+    // callable on its own. It has to report the gap the way every other finding does,
+    // because a claim with no profile behind it is a wall nobody is enforcing.
+    const layers = scratchDir({ 'security.md': 'Do not run gh secret.' });
+    const perms = scratchDir({ 't9.settings.json': profile(['Bash(gh secret:*)']) });
+    const noProfiles = {
+      command: 'gh secret',
+      statedIn: ['security.md'],
+      enforcement: 'denied',
+    } as CoherenceClaim;
+    try {
+      const [finding] = claimChecks([noProfiles], layers, perms);
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toBe('denied claim needs at least one permission profile');
+    } finally {
+      rmSync(layers, { recursive: true, force: true });
+      rmSync(perms, { recursive: true, force: true });
+    }
+  });
 
   const denied: CoherenceClaim = {
     command: 'sops -d',
@@ -474,6 +505,52 @@ describe('slash commands', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('prices nothing when the commands directory does not exist', () => {
+    // harness-lint reports and never throws. A repo that has not added commands yet still
+    // has to lint, with the missing directory surfacing as a failed manifest check instead.
+    const dir = scratchDir({ 'placeholder.md': 'not the commands directory' });
+    try {
+      expect(commandCosts(join(dir, 'commands'))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a line a command shares with an instruction layer', () => {
+    // A command and a layer that state the same rule drift in pairs: edit one copy and the
+    // other goes stale. This list is the only thing that notices.
+    const shared = 'Stop and get the packet split approved before you start.';
+    const layers = scratchDir({ '00-universal.md': `# Universal\n\n- ${shared}\n` });
+    const commands = scratchDir({
+      'conductor.md': command('Run the conductor', `${shared}\n`),
+    });
+    try {
+      const echoes = commandEchoes(layers, commands);
+
+      expect(echoes).toHaveLength(1);
+      expect(echoes[0]?.line).toBe(normalizeLine(shared));
+      expect(echoes[0]?.layers).toEqual(['commands/conductor.md', '00-universal.md']);
+    } finally {
+      rmSync(layers, { recursive: true, force: true });
+      rmSync(commands, { recursive: true, force: true });
+    }
+  });
+
+  it('reports nothing when no command line appears in a layer', () => {
+    // The other half of the pair: an echo list that fires on unrelated text would be noise
+    // nobody reads, and the real echo would be lost in it.
+    const layers = scratchDir({
+      '00-universal.md': '# Universal\n\nNothing in common here.\n',
+    });
+    const commands = scratchDir({ 'conductor.md': command('Run the conductor') });
+    try {
+      expect(commandEchoes(layers, commands)).toEqual([]);
+    } finally {
+      rmSync(layers, { recursive: true, force: true });
+      rmSync(commands, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('harness scorecard', () => {
@@ -579,5 +656,416 @@ describe('codex / claude secret coherence', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('coherence manifest validation', () => {
+  // The manifest is the tested bridge between what the layers say and what the profiles
+  // enforce. A malformed one that loaded anyway would report coherence it never checked, so
+  // every rejection below is part of the guarantee rather than defensive noise.
+  const validManifest = {
+    claims: [
+      {
+        command: 'rm -rf',
+        statedIn: ['00-universal.md'],
+        enforcement: 'denied',
+        deniedIn: ['t1.settings.json'],
+      },
+    ],
+    acknowledgedUnsoundDenies: [
+      { profile: 't1.settings.json', rule: 'Bash(git push:*)', reason: 'prefix is broader' },
+    ],
+  };
+
+  const read = (manifest: unknown): CoherenceFile => {
+    const dir = scratchDir({ [COHERENCE_FILE]: JSON.stringify(manifest) });
+    try {
+      return readCoherence(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  const claimWith = (overrides: Record<string, unknown>) => ({
+    ...validManifest,
+    claims: [{ ...validManifest.claims[0], ...overrides }],
+  });
+
+  it('accepts a well-formed manifest', () => {
+    const manifest = read(validManifest);
+
+    expect(manifest.claims).toHaveLength(1);
+    expect(manifest.acknowledgedUnsoundDenies).toHaveLength(1);
+  });
+
+  const shapeRejections: [string, unknown][] = [
+    ['null instead of an object', null],
+    ['claims missing entirely', { acknowledgedUnsoundDenies: [] }],
+    ['claims that are not an array', { ...validManifest, claims: 'rm -rf' }],
+    ['an empty claims list', { ...validManifest, claims: [] }],
+    ['acknowledgedUnsoundDenies missing', { claims: validManifest.claims }],
+    [
+      'acknowledgedUnsoundDenies that is not an array',
+      { ...validManifest, acknowledgedUnsoundDenies: {} },
+    ],
+  ];
+
+  for (const [description, manifest] of shapeRejections) {
+    it(`rejects ${description}`, () => {
+      expect(() => read(manifest)).toThrow(/non-empty claims and an acknowledgedUnsoundDenies/);
+    });
+  }
+
+  it('rejects a claim that is not an object', () => {
+    expect(() => read({ ...validManifest, claims: [null] })).toThrow(/invalid coherence claim/);
+  });
+
+  const claimRejections: [string, Record<string, unknown>][] = [
+    ['a command that is not a string', { command: 42 }],
+    ['a blank command', { command: '   ' }],
+    ['statedIn missing', { statedIn: undefined }],
+    ['statedIn that is not an array', { statedIn: '00-universal.md' }],
+    ['an empty statedIn', { statedIn: [] }],
+    ['a statedIn entry that is not a string', { statedIn: [7] }],
+    ['a blank statedIn entry', { statedIn: ['  '] }],
+    ['an enforcement value that is neither denied nor advisory', { enforcement: 'maybe' }],
+    ['a denied claim with no deniedIn', { deniedIn: undefined }],
+    ['a denied claim with an empty deniedIn', { deniedIn: [] }],
+    ['a denied claim whose deniedIn holds a blank name', { deniedIn: [' '] }],
+    ['an advisory claim with no reason', { enforcement: 'advisory', deniedIn: undefined }],
+    [
+      'an advisory claim with a blank reason',
+      { enforcement: 'advisory', deniedIn: undefined, reason: ' ' },
+    ],
+  ];
+
+  for (const [description, overrides] of claimRejections) {
+    it(`rejects ${description}`, () => {
+      expect(() => read(claimWith(overrides))).toThrow(/invalid coherence claim/);
+    });
+  }
+
+  it('accepts an advisory claim that carries a reason', () => {
+    const manifest = read(
+      claimWith({ enforcement: 'advisory', deniedIn: undefined, reason: 'judgement call' }),
+    );
+
+    expect(manifest.claims[0]?.enforcement).toBe('advisory');
+  });
+
+  const acknowledgementRejections: [string, unknown][] = [
+    ['an acknowledgement that is not an object', null],
+    ['an acknowledgement with no profile', { rule: 'Bash(x:*)', reason: 'why' }],
+    ['an acknowledgement with no rule', { profile: 't1.settings.json', reason: 'why' }],
+    ['an acknowledgement with a blank reason', { profile: 't1', rule: 'Bash(x:*)', reason: '' }],
+  ];
+
+  for (const [description, entry] of acknowledgementRejections) {
+    it(`rejects ${description}`, () => {
+      const manifest = { ...validManifest, acknowledgedUnsoundDenies: [entry] };
+
+      expect(() => read(manifest)).toThrow(/invalid deny acknowledgement/);
+    });
+  }
+});
+
+describe('bundle budget (which bundle it prices)', () => {
+  const cost = (stack: string, estimatedTokens: number): BundleCost => ({
+    stack,
+    targets: [],
+    chars: estimatedTokens * 4,
+    lines: 10,
+    estimatedTokens,
+  });
+
+  it('prices the largest bundle, not the last one measured', () => {
+    // The budget only means something applied to the worst case. Reporting any other bundle
+    // would let the largest configuration drift past the ceiling unnoticed.
+    const finding = budgetCheck([cost('big', 3000), cost('small', 10)]);
+
+    expect(finding.detail).toBe('worst case big+none ~3000 tokens (budget 3600)');
+  });
+
+  it('keeps the first of two equally large bundles rather than the later one', () => {
+    expect(budgetCheck([cost('first', 500), cost('second', 500)]).detail).toContain('first+none');
+  });
+
+  it('passes exactly at the budget', () => {
+    const finding = budgetCheck([cost('exact', BUNDLE_TOKEN_BUDGET)]);
+
+    expect(finding.ok).toBe(true);
+    expect(finding.detail).toBe(
+      `worst case exact+none ~${BUNDLE_TOKEN_BUDGET} tokens (budget ${BUNDLE_TOKEN_BUDGET})`,
+    );
+  });
+
+  it('fails rather than passing vacuously when there are no bundles at all', () => {
+    const finding = budgetCheck([]);
+
+    expect(finding.ok).toBe(false);
+    expect(finding.detail).toBe('no bundles — instruction layers missing');
+  });
+});
+
+describe('codex / claude secret coherence (what each tier is required to deny)', () => {
+  const codexRules = 'prefix_rule(pattern = ["rm"], decision = "forbidden")\n';
+
+  it('names the paths it confirmed, not just that it passed', () => {
+    const details = new Map(
+      codexSecretsCheck(permissionsDir).map((finding) => [finding.name, finding.detail]),
+    );
+
+    expect(details.get('codex t1 secret denials')).toBe(
+      'codex.t1.config.toml denies secrets/**, .env',
+    );
+    expect(details.get('codex t0 secret denials')).toBe(
+      'codex.t0.config.toml denies secrets/**, .env',
+    );
+  });
+
+  it('requires t0 to deny secrets even if its claude profile stops naming them', () => {
+    // t0 is the tier handed to an unattended run, so its secret denials are asserted
+    // outright rather than mirrored from the claude profile. Mirroring would mean a rule
+    // deleted on the claude side silently stops being required on the codex side too.
+    const dir = scratchDir({
+      't0.settings.json': profile(['Bash(rm:*)']),
+      'codex.t0.config.toml': '[permissions.x.filesystem]\n"docs/**" = "deny"\n',
+      'codex.t0.rules': codexRules,
+    });
+    try {
+      const finding = codexSecretsCheck(dir).find((entry) => entry.name.includes('t0'));
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toBe('codex.t0.config.toml does not deny: secrets/**, .env');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires nothing of a higher tier whose claude profile names no secret paths', () => {
+    // Above t0 the codex profile mirrors the claude one, so there is nothing to mirror.
+    const dir = scratchDir({
+      't1.settings.json': profile(['Bash(rm:*)']),
+      'codex.t1.config.toml': '[permissions.x.filesystem]\n"docs/**" = "deny"\n',
+      'codex.t1.rules': codexRules,
+    });
+    try {
+      const finding = codexSecretsCheck(dir).find((entry) => entry.name.includes('t1'));
+
+      expect(finding?.ok).toBe(true);
+      expect(finding?.detail).toBe('codex.t1.config.toml denies nothing required');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not count a path the codex profile mentions but allows', () => {
+    // The whole check is a string match, so "mentioned" and "denied" have to stay distinct.
+    const dir = scratchDir({
+      't1.settings.json': profile(['Read(secrets/**)']),
+      'codex.t1.config.toml': '[permissions.x.filesystem]\n"secrets/**" = "allow"\n',
+      'codex.t1.rules': codexRules,
+    });
+    try {
+      const finding = codexSecretsCheck(dir).find((entry) => entry.name.includes('t1'));
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toBe('codex.t1.config.toml does not deny: secrets/**');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports an unparseable claude profile as a failed finding, not a crash', () => {
+    const dir = scratchDir({
+      't1.settings.json': 'not json at all',
+      'codex.t1.config.toml': '[permissions.x.filesystem]\n"secrets/**" = "deny"\n',
+      'codex.t1.rules': codexRules,
+    });
+    try {
+      const finding = codexSecretsCheck(dir).find((entry) => entry.name.includes('t1'));
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toContain('cannot read t1.settings.json');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says a tier ships no profile rather than inventing a requirement', () => {
+    const dir = scratchDir({ 'placeholder.txt': 'x' });
+    try {
+      expect(codexSecretsCheck(dir).map((finding) => finding.detail)).toEqual([
+        'tier 0 ships no profile',
+        'tier 1 ships no profile',
+        'tier 2 ships no profile',
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the printed report', () => {
+  const capture = (body: () => void): string[] => {
+    const lines: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      body();
+    } finally {
+      log.mockRestore();
+    }
+    return lines;
+  };
+
+  const emptyReport: HarnessReport = {
+    findings: [],
+    costs: [],
+    commandCosts: [],
+    echoes: [],
+    commandEchoes: [],
+    unclaimedDenies: [],
+    scorecard: null,
+  };
+
+  it('marks each finding PASS or FAIL and prints its detail', () => {
+    const lines = capture(() =>
+      printReport({
+        ...emptyReport,
+        findings: [
+          { name: 'bundle budget', ok: true, detail: 'worst case ts+none ~3000 tokens' },
+          { name: 'claim rm -rf', ok: false, detail: 'no longer stated in 00-universal.md' },
+        ],
+      }),
+    );
+
+    expect(lines[0]).toBe('PASS  bundle budget — worst case ts+none ~3000 tokens');
+    expect(lines[1]).toBe('FAIL  claim rm -rf — no longer stated in 00-universal.md');
+  });
+
+  it('prices each bundle in a fixed-width table', () => {
+    const lines = capture(() =>
+      printReport({
+        ...emptyReport,
+        costs: [
+          { stack: 'ts', targets: ['workers'], chars: 12000, lines: 240, estimatedTokens: 3000 },
+        ],
+      }),
+    );
+
+    expect(lines[0]).toBe('\nBundle cost (layers only, project layer excluded):');
+    expect(lines[1]).toBe('  ts+workers                3000 tokens  240 lines');
+  });
+
+  it('omits every optional section when there is nothing to report', () => {
+    // A report padded with empty headings is one nobody reads to the bottom of.
+    const lines = capture(() => printReport(emptyReport));
+
+    expect(lines).toEqual(['\nBundle cost (layers only, project layer excluded):']);
+  });
+
+  it('counts what it lists in each optional section heading', () => {
+    const lines = capture(() =>
+      printReport({
+        ...emptyReport,
+        commandCosts: [{ name: 'conductor.md', chars: 400, lines: 12, estimatedTokens: 100 }],
+        echoes: [{ line: 'never force-push', layers: ['00-universal.md', '10-security.md'] }],
+        commandEchoes: [{ line: 'open a pull request', layers: ['commands/conductor.md'] }],
+        unclaimedDenies: ['Bash(tofu destroy:*)'],
+      }),
+    );
+
+    expect(lines).toContain('\nSlash commands (installed per repo, loaded on demand):');
+    expect(lines).toContain('  conductor.md               100 tokens  12 lines');
+    expect(lines).toContain('\nRules stated in more than one layer (1):');
+    expect(lines).toContain('  00-universal.md + 10-security.md\n    never force-push');
+    expect(lines).toContain('\nLines a command shares with a layer (1):');
+    expect(lines).toContain('\nDeny rules no instruction layer explains (1):');
+    expect(lines).toContain('  Bash(tofu destroy:*)');
+  });
+});
+
+describe('harness-lint CLI (the exit code is the enforcement)', () => {
+  /**
+   * Runs the real CLI against athena's own layers. The committed scorecard is restored
+   * afterwards: `main` writes it under `--write`, and a mutation run may flip that branch on.
+   */
+  const runCli = (): { lines: string[]; exitCode: number | string | undefined } => {
+    const scorecardPath = join(athenaDir, SCORECARD_FILE);
+    const committed = readFileSync(scorecardPath, 'utf8');
+    const lines: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    const originalArgv = process.argv;
+    const originalExitCode = process.exitCode;
+    process.argv = ['node', 'harness-lint.ts'];
+    process.exitCode = undefined;
+    try {
+      main();
+      return { lines, exitCode: process.exitCode };
+    } finally {
+      process.argv = originalArgv;
+      process.exitCode = originalExitCode;
+      log.mockRestore();
+      // Only repair it if a mutant actually flipped the --write branch. Writing
+      // unconditionally would race with the parallel workers reading this same file.
+      if (readFileSync(scorecardPath, 'utf8') !== committed) {
+        writeFileSync(scorecardPath, committed);
+      }
+    }
+  };
+
+  it('leaves the exit code alone while the harness is coherent', () => {
+    // If this fails, the harness is genuinely failing a check — read the printed report.
+    const { lines, exitCode } = runCli();
+
+    expect(exitCode).toBeUndefined();
+    expect(lines.filter((line) => line.startsWith('FAIL'))).toEqual([]);
+    expect(lines.filter((line) => line.startsWith('PASS')).length).toBeGreaterThan(10);
+  });
+
+  it('prints the cost table below the findings', () => {
+    const { lines } = runCli();
+
+    expect(lines).toContain('\nBundle cost (layers only, project layer excluded):');
+    expect(lines.some((line) => line.includes('tokens'))).toBe(true);
+  });
+
+  it('does not write the scorecard without --write', () => {
+    const scorecardPath = join(athenaDir, SCORECARD_FILE);
+    const before = readFileSync(scorecardPath, 'utf8');
+
+    runCli();
+
+    expect(readFileSync(scorecardPath, 'utf8')).toBe(before);
+  });
+});
+
+describe('the CLI verdict', () => {
+  it('fails the run when any finding failed, and only then', () => {
+    const pass = { name: 'a', ok: true, detail: '' };
+    const fail = { name: 'b', ok: false, detail: '' };
+
+    expect(anyFailed([])).toBe(false);
+    expect(anyFailed([pass, pass])).toBe(false);
+    expect(anyFailed([pass, fail])).toBe(true);
+    expect(anyFailed([fail])).toBe(true);
+  });
+});
+
+describe('rule-line normalisation', () => {
+  it('strips a list marker that was hidden under emphasis', () => {
+    // Regression: normalisation ran one pass, so removing the underscores exposed a `1.`
+    // that then stayed in the text. The italicised rule and its plain twin normalised to
+    // different strings and the duplicate went unreported.
+    expect(normalizeLine('_1. Never force-push_')).toBe(normalizeLine('1. Never force-push'));
+    expect(normalizeLine('_1. Never force-push_')).toBe('never force-push');
+  });
+
+  it('leaves an already-normalised line alone', () => {
+    expect(normalizeLine('never force-push')).toBe('never force-push');
   });
 });
