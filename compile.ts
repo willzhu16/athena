@@ -29,6 +29,7 @@ export interface CompileInputs {
   instructionsDir: string;
   permissionsDir: string;
   commandsDir: string;
+  hooksDir: string;
   projectLayer: string;
 }
 
@@ -80,6 +81,18 @@ export const SETTINGS_PROFILE = settingsProfileFor(DEFAULT_TIER);
  * repo is not something an agent working in a generated repo will ever find.
  */
 export const COMMANDS = ['conductor.md'] as const;
+
+/**
+ * Hook scripts compile installs into `.claude/hooks/`, referenced by the `hooks` block in
+ * every permission profile. They are what makes a rule fire on its own instead of waiting
+ * for an agent to remember it: the layers can ask for a green gate, but only the Stop hook
+ * makes "done" mean the gate actually ran.
+ *
+ * Deliberately universal. Each script calls the frozen package-script contract (D-18) and
+ * detects the toolchain at runtime, so one set of bytes serves every stack and doctor can go
+ * on comparing them verbatim.
+ */
+export const HOOKS = ['gate.mjs'] as const;
 
 /** Validate untrusted JSON before either CLI reads fields or constructs layer paths. */
 export function validateConfig(value: unknown): asserts value is AthenaConfig {
@@ -202,6 +215,9 @@ export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOu
           'utf8',
         );
       }
+      for (const hook of HOOKS) {
+        files[`.claude/hooks/${hook}`] = readFileSync(join(inputs.hooksDir, hook), 'utf8');
+      }
     } else if (tool === 'codex') {
       files['AGENTS.md'] = compiled;
       files['.codex/config.toml'] = readProfile(inputs.permissionsDir, codexProfileFor(tier));
@@ -238,6 +254,7 @@ export const main = (): void => {
     instructionsDir: join(athenaDir, 'instructions'),
     permissionsDir: join(athenaDir, 'permissions'),
     commandsDir: join(athenaDir, 'commands'),
+    hooksDir: join(athenaDir, 'hooks'),
     projectLayer: readProjectLayer(projectDir),
   });
   const written = writeOutputs(projectDir, outputs);

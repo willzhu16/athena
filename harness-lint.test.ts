@@ -27,6 +27,8 @@ import {
   duplicateLines,
   type HarnessReport,
   harnessLint,
+  hooksManifestCheck,
+  hooksWiredCheck,
   isOrderSensitive,
   main,
   normalizeLine,
@@ -783,7 +785,10 @@ describe('bundle budget (which bundle it prices)', () => {
     // would let the largest configuration drift past the ceiling unnoticed.
     const finding = budgetCheck([cost('big', 3000), cost('small', 10)]);
 
-    expect(finding.detail).toBe('worst case big+none ~3000 tokens (budget 3600)');
+    // Reads the constant rather than repeating its value: the budget is meant to move by
+    // deliberate decision, and a test that has to be edited on every legitimate raise
+    // teaches people to edit tests. What this pins down is WHICH bundle gets priced.
+    expect(finding.detail).toBe(`worst case big+none ~3000 tokens (budget ${BUNDLE_TOKEN_BUDGET})`);
   });
 
   it('keeps the first of two equally large bundles rather than the later one', () => {
@@ -1067,5 +1072,110 @@ describe('rule-line normalisation', () => {
 
   it('leaves an already-normalised line alone', () => {
     expect(normalizeLine('never force-push')).toBe('never force-push');
+  });
+});
+
+describe('shipped hooks', () => {
+  /** A permissions directory whose three tiers all configure the given hook commands. */
+  const tiersWiringTo = (commands: string[]): string =>
+    scratchDir(
+      Object.fromEntries(
+        ['t0', 't1', 't2'].map((tier) => [
+          tier + '.settings.json',
+          JSON.stringify({
+            permissions: { allow: [], deny: [] },
+            hooks: {
+              Stop: [{ hooks: commands.map((command) => ({ type: 'command', command })) }],
+            },
+          }),
+        ]),
+      ),
+    );
+
+  it('accepts a hooks directory holding exactly what HOOKS lists', () => {
+    const finding = hooksManifestCheck(join(athenaDir, 'hooks'));
+
+    expect(finding.ok).toBe(true);
+    // The detail is the whole printout for a passing run, so an empty one would make
+    // `harness-lint` report a silent PASS that tells a reader nothing.
+    expect(finding.detail).toBe('1 hook(s), all present');
+  });
+
+  it('reports a hook script that no manifest entry ships', () => {
+    // An unlisted file looks like a working gate to anyone reading the directory, and
+    // compile never installs it, so the repo it was written for silently has no such hook.
+    const dir = scratchDir({ 'gate.mjs': 'exit 0\n', 'orphan.mjs': 'exit 0\n' });
+    try {
+      const finding = hooksManifestCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toBe('on disk but not in HOOKS: orphan.mjs');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a manifest entry with no script behind it', () => {
+    const dir = scratchDir({ 'unrelated.txt': 'not a hook\n' });
+    try {
+      const finding = hooksManifestCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      // Named exactly, because a scan that stopped filtering by extension would call the
+      // stray .txt a hook — reporting it as an orphan and still "failing" for the wrong
+      // reason. Asserting the whole string is what tells those two apart.
+      expect(finding.detail).toBe('in HOOKS but not on disk: gate.mjs');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts tiers whose profiles all reference every shipped hook', () => {
+    const dir = tiersWiringTo(['bash /repo/.claude/hooks/gate.mjs']);
+    try {
+      const findings = hooksWiredCheck(dir);
+
+      expect(findings.every((finding) => finding.ok)).toBe(true);
+      expect(findings.map((finding) => finding.name)).toEqual([
+        'hooks wired t0',
+        'hooks wired t1',
+        'hooks wired t2',
+      ]);
+      expect(findings[0].detail).toBe('every hook is referenced by the t0 profile');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a hook that ships but no profile ever runs', () => {
+    // The failure this check exists for: a script sitting in .claude/hooks that reads like
+    // enforcement while nothing invokes it. Every tier must name it, not just one.
+    const dir = tiersWiringTo(['bash /repo/.claude/hooks/something-else.sh']);
+    try {
+      const findings = hooksWiredCheck(dir);
+
+      expect(findings.every((finding) => !finding.ok)).toBe(true);
+      expect(findings[0].detail).toBe('shipped but never run under t0: gate.mjs');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a profile carrying no hooks block at all', () => {
+    // A profile predating hooks still parses, so the absent block has to read as a finding
+    // rather than as an empty list that trivially satisfies the check.
+    const dir = scratchDir(
+      Object.fromEntries(
+        ['t0', 't1', 't2'].map((tier) => [
+          tier + '.settings.json',
+          JSON.stringify({ permissions: { allow: [], deny: [] } }),
+        ]),
+      ),
+    );
+    try {
+      expect(hooksWiredCheck(dir).every((finding) => !finding.ok)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
