@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/willzhu16/athena/compare/v1.4.0...v1.5.0) (2026-09-16)
+
+
+### Features
+
+* **acceptance:** read pytest reports so the gate works on Python repos ([#19](https://github.com/willzhu16/athena/issues/19)) ([3ff7da2](https://github.com/willzhu16/athena/commit/3ff7da2563781c25114b6ea0d3ba0ef424e7e346))
+
 ## [1.4.0](https://github.com/willzhu16/athena/compare/v1.3.1...v1.4.0) (2026-09-14)
 
 

@@ -12,7 +12,9 @@ and real tests on every run rather than only against fixtures.
 **Non-goals**
 : Do not change what `doctor` or `harness-lint` check. Do not introduce a BDD DSL or a
   Gherkin parser — criteria stay prose, and the link to a test is the criterion id in the
-  test name. Do not make the tool talk to GitHub; it reads files.
+  test name. Do not make the tool talk to GitHub; it reads files. Do not require a repo to
+  declare which test runner it uses: the report shape is detected, because a declaration in
+  a second place is a declaration that can drift.
 
 **Acceptance criteria**
 
@@ -27,6 +29,12 @@ and real tests on every run rather than only against fixtures.
 - AC-5: the CLI exits non-zero when any criterion is uncovered, since the exit code is the
   gate and the printout is only how a human reads it
 - AC-6: criterion ids are matched whole, so a test naming AC-10 is not evidence for AC-1
+- AC-7: a pytest report is read as readily as a vitest one, so the gate is not a TypeScript
+  privilege
+- AC-8: a test claims a criterion in whatever spelling its language allows — `AC-1:` where
+  punctuation is legal, `ac_1_` where the name must be an identifier
+- AC-9: an id embedded in a longer word claims nothing, so `test_mac_10_thing` is not
+  evidence for AC-10
 
 **Constraints**
 : Deterministic and offline, like `harness-lint` — no network, no agent, no API spend, so it
