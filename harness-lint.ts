@@ -7,6 +7,7 @@ import {
   COMMANDS,
   codexProfileFor,
   codexRulesFor,
+  HOOKS,
   KNOWN_TIERS,
   SETTINGS_PROFILE,
   settingsProfileFor,
@@ -62,11 +63,25 @@ export interface CoherenceFile {
   acknowledgedUnsoundDenies: AcknowledgedDeny[];
 }
 
+export interface HookHandler {
+  type: string;
+  command: string;
+  timeout?: number;
+}
+
+/** One hook event's entries. Stop takes no matcher, so the handlers hang off the entry. */
+export interface HookEntry {
+  matcher?: string;
+  hooks: HookHandler[];
+}
+
 export interface PermissionProfile {
   permissions: {
     allow: string[];
     deny: string[];
   };
+  /** Optional so a profile predating hooks still parses as a valid profile. */
+  hooks?: Record<string, HookEntry[]>;
 }
 
 export interface HarnessReport {
@@ -87,8 +102,14 @@ export interface HarnessReport {
  *
  * Raising this is meant to be a deliberate one-line act that shows up in a diff alongside
  * the regenerated scorecard. Project instructions, skills and tool output sit outside it.
+ *
+ * Raised 3600 -> 3800 on 2026-09-17 by owner decision, to pay for the hooks section in
+ * 00-universal. Worth naming the tension: the research behind that section says instruction
+ * text is the least effective harness edit there is, so a rising number here is a cost to
+ * justify, not headroom to spend. The section earns it by pointing at a gate that runs on
+ * its own; prose that only asks an agent to remember something does not.
  */
-export const BUNDLE_TOKEN_BUDGET = 3600;
+export const BUNDLE_TOKEN_BUDGET = 3800;
 
 /** Cheap offline stand-in for a real tokenizer — no dependency, consistent across runs. */
 const CHARS_PER_TOKEN = 4;
@@ -602,6 +623,61 @@ export const commandCrossLinkCheck = (commandsDir: string): Finding => {
   };
 };
 
+/** Hook scripts on disk, so the manifest is checked against reality rather than itself. */
+const hookFiles = (hooksDir: string): string[] =>
+  existsSync(hooksDir)
+    ? readdirSync(hooksDir)
+        .filter((name) => name.endsWith('.mjs'))
+        .sort()
+    : [];
+
+/**
+ * A hook file HOOKS does not list never ships; a listed file that does not exist makes
+ * compile throw. Same silent pair as the commands manifest, same check.
+ */
+export const hooksManifestCheck = (hooksDir: string): Finding => {
+  const onDisk = hookFiles(hooksDir);
+  const listed: string[] = [...HOOKS];
+  const orphans = onDisk.filter((name) => !listed.includes(name));
+  const absent = listed.filter((name) => !onDisk.includes(name));
+  const problems = [
+    ...(orphans.length > 0 ? [`on disk but not in HOOKS: ${orphans.join(', ')}`] : []),
+    ...(absent.length > 0 ? [`in HOOKS but not on disk: ${absent.join(', ')}`] : []),
+  ];
+  return {
+    name: 'hooks manifest',
+    ok: problems.length === 0,
+    detail: problems.length === 0 ? `${listed.length} hook(s), all present` : problems.join('; '),
+  };
+};
+
+/** Every command string configured across a profile's hook events, flattened. */
+const configuredHookCommands = (profile: PermissionProfile): string[] =>
+  Object.values(profile.hooks ?? {}).flatMap((entries) =>
+    entries.flatMap((entry) => entry.hooks.map((handler) => handler.command)),
+  );
+
+/**
+ * A shipped hook that no profile references is a dead script that reads like a gate — the
+ * worst failure this repo has, because it looks exactly like enforcement while enforcing
+ * nothing. Checked per tier, since a profile is the only thing that makes a hook run.
+ */
+export const hooksWiredCheck = (permissionsDir: string): Finding[] =>
+  (KNOWN_TIERS as readonly number[]).map((tier) => {
+    const commands = configuredHookCommands(readProfile(permissionsDir, `t${tier}`));
+    const unreferenced = [...HOOKS].filter(
+      (hook) => !commands.some((command) => command.includes(`.claude/hooks/${hook}`)),
+    );
+    return {
+      name: `hooks wired t${tier}`,
+      ok: unreferenced.length === 0,
+      detail:
+        unreferenced.length === 0
+          ? `every hook is referenced by the t${tier} profile`
+          : `shipped but never run under t${tier}: ${unreferenced.join(', ')}`,
+    };
+  });
+
 /** Lines a command shares with an instruction layer: not waste, but they drift in pairs. */
 export const commandEchoes = (instructionsDir: string, commandsDir: string): Echo[] => {
   const byLine = new Map<string, string[]>();
@@ -757,9 +833,11 @@ export const harnessLint = (
   instructionsDir: string,
   permissionsDir: string,
   commandsDir?: string,
+  hooksDir?: string,
 ): HarnessReport => {
   const athenaRoot = dirname(fileURLToPath(import.meta.url));
   const resolvedCommandsDir = commandsDir ?? join(athenaRoot, 'commands');
+  const resolvedHooksDir = hooksDir ?? join(athenaRoot, 'hooks');
   let coherence: CoherenceFile;
   try {
     coherence = readCoherence(permissionsDir);
@@ -791,6 +869,8 @@ export const harnessLint = (
       ...commandFrontmatterChecks(resolvedCommandsDir),
       commandDuplicateCheck(resolvedCommandsDir),
       commandCrossLinkCheck(resolvedCommandsDir),
+      hooksManifestCheck(resolvedHooksDir),
+      ...hooksWiredCheck(permissionsDir),
       ...codexSecretsCheck(permissionsDir),
       scorecardCheck(dirname(resolvedCommandsDir), scorecard),
     ],

@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const instructionsDir = join(dirname(fileURLToPath(import.meta.url)), 'instructions');
-const LAYER_LINE_CAP = 120;
+// Raised 120 -> 135 on 2026-09-17, deliberately and by owner decision, to fit the hooks
+// section in 00-universal. The cap exists so that growth is a choice rather than a drift, so
+// the number moves in its own reviewed line and never quietly to accommodate a paste.
+const LAYER_LINE_CAP = 135;
 
 describe('instruction layers', () => {
   it('allows framework-required default exports in the shared TypeScript rules', () => {

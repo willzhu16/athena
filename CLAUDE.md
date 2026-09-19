@@ -18,7 +18,9 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
     `30-target-<t>.md` per target + `project.md` last (`resolveLayers` in compile.ts).
   - tool `claude` → `CLAUDE.md` + `.claude/settings.json` (verbatim copy of
     `permissions/t<tier>.settings.json`) + one `.claude/commands/<name>.md` per entry in
-    `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`);
+    `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`) +
+    one `.claude/hooks/<name>` per entry in `HOOKS` (verbatim copy of `hooks/<name>`,
+    currently just `gate.mjs`);
     tool `codex` → `AGENTS.md` + `.codex/config.toml` (file access) +
     `.codex/rules/artemis.rules` (commands), both from `permissions/codex.t<tier>.*`, and
     no `.claude/` surface or slash commands. Codex splits file and command policy across
@@ -36,7 +38,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   per check, exit 1 if any FAIL. There is no WARN tier. Checks: config present/parseable/
   well-shaped (unknown tools fail here too, parity with compile), layers resolvable,
   `CLAUDE.md`/`AGENTS.md` freshness, `.claude/settings.json` byte-equality vs the t1
-  profile, and presence of `.github/ISSUE_TEMPLATE/task.yml`.
+  profile, each shipped slash command and hook byte-for-byte, and presence of
+  `.github/ISSUE_TEMPLATE/task.yml`.
 - `pnpm harness-lint` (`harness-lint.ts`) checks athena's own harness rather than a target
   repo — deterministic and offline, no agent and no network. Checks: every claim in
   `permissions/coherence.json` still holds (the layer states the command AND the named
@@ -44,9 +47,11 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   reason); every flag-bearing
   deny rule carries a written acknowledgement (order-sensitive patterns are evadable —
   REVIEW-2026-07-15 #7); the worst-case compiled bundle stays under `BUNDLE_TOKEN_BUDGET`
-  (3600, ratcheted to the measured worst case rather than invented; run harness-lint for the
+  (3800, ratcheted to the measured worst case rather than invented; run harness-lint for the
   current estimate); and no rule line repeats inside one
-  bundle. It also covers `commands/`: the directory must match `COMMANDS` exactly (an
+  bundle. It also covers `hooks/`: the directory must match `HOOKS`, and every shipped hook
+  must be referenced by all three permission profiles, since a hook no profile names is a
+  dead script that reads like a gate. It also covers `commands/`: the directory must match `COMMANDS` exactly (an
   unlisted file never ships, a listed file that is absent makes compile throw), every command
   needs frontmatter carrying a description, no command repeats a line, and a same-named
   process doc at the repo root must reference `commands/<name>.md` — the mechanical version
@@ -74,7 +79,7 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 - `pnpm harness-lint --write` — regenerate `harness-scorecard.json`, then commit the diff.
 - `pnpm test:mutation` — Stryker: rewrites the source a thousand ways and reports how many
   of those edits a test caught. ~50 s. Fails under `thresholds.break` in
-  `stryker.config.json` (85; measured 86.73 on 2026-09-14). Treat the number as a ratchet:
+  `stryker.config.json` (87; measured 88.86 on 2026-09-17). Treat the number as a ratchet:
   raise it when it rises, never lower it to turn a red build green. Survivors that no test
   can kill carry a `// Stryker disable next-line all` comment saying why.
 - `pnpm acceptance <packet.md> <report.json>` — fails the build for any acceptance
@@ -95,7 +100,7 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 - `compile.ts`, `doctor.ts` — the whole product. Tests live flat at root next to the code
   (`*.test.ts`); no `src/`, no `tests/`, no build (`tsx` runs TS directly).
 - `instructions/` — the six canonical layers. `instructions.test.ts` auto-discovers `*.md`
-  and enforces a **120-line cap per layer**. Valid `stack` values = existing
+  and enforces a **135-line cap per layer**. Valid `stack` values = existing
   `20-stack-*.md` files (ts, python); valid `targets` = `30-target-*.md` (workers,
   vscode-ext). Adding a file IS adding a valid config value.
 - `permissions/` — Claude Code approval profiles: t0 reviewer, t1 author, t2 preview.
@@ -118,6 +123,26 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   operational twin of the `conductor.md` process doc at the repo root — edit both.
   harness-lint enforces the half of that which is mechanical: the doc must reference
   `commands/conductor.md`, and the directory must match `COMMANDS`.
+- `hooks/` — node scripts compile installs verbatim into `.claude/hooks/` of every
+  claude-enabled repo (`HOOKS`, compile.ts), referenced by the `hooks` block in every
+  permission profile. Currently just `gate.mjs`, a `Stop` hook that runs the repo's own
+  `lint` and `typecheck` and exits 2 while either is red, so an agent cannot end a turn on
+  work the gate would reject. It is the only part of the harness that runs inside an
+  agent's loop rather than in CI.
+  - **Universal on purpose.** Each script calls the frozen package-script contract (D-18)
+    and detects the toolchain at runtime, so one set of bytes serves pnpm and uv repos and
+    doctor can compare them byte-exact. Nothing in a hook parses JSON, so no repo needs jq.
+  - **Node, not shell, and not by shebang.** compile writes files without an exec bit and
+    git does not preserve one on a Windows checkout, so the profile invokes an interpreter
+    explicitly. That interpreter is `node` because on a Windows host `bash` resolves to
+    WSL’s bash, which cannot read the Windows path Claude Code passes — a shell hook was
+    verified to fail on exactly the machine the owner works from. node ships with Claude
+    Code itself, so it is the one interpreter guaranteed to be there.
+  - A red gate must not loop. `gate.mjs` returns 0 when Claude Code sets `stop_hook_active`,
+    which is the second pass, so a permanently red repo stalls once and then reports.
+  - harness-lint checks both halves: the directory matches `HOOKS`, and every shipped hook
+    is referenced by all three profiles. A hook nobody references is a dead script that
+    reads like a gate, which is worse than having no hook at all.
 - `conductor.md`, `task-packet.md`, `review-protocol.md`, `FOREMAN-NOTES.md` — process docs
   for multi-agent work (task packets, review rules, max-3-concurrency conductor pattern).
   FOREMAN-NOTES is the parking lot for out-of-scope runtime ideas (D-17/D-28).

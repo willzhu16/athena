@@ -9,6 +9,7 @@ import {
   codexRulesFor,
   computeHash,
   extractBody,
+  HOOKS,
   settingsProfileFor,
   tierOf,
   validateConfig,
@@ -155,6 +156,7 @@ export const doctor = (
   instructionsDir: string,
   permissionsDir?: string,
   commandsDir?: string,
+  hooksDir?: string,
 ): Check[] => {
   if (!existsSync(join(projectDir, '.athena', 'config.json'))) {
     return [{ name: 'config', ok: false, detail: '.athena/config.json missing' }];
@@ -185,6 +187,7 @@ export const doctor = (
   const athenaRoot = dirname(fileURLToPath(import.meta.url));
   const resolvedPermissionsDir = permissionsDir ?? join(athenaRoot, 'permissions');
   const resolvedCommandsDir = commandsDir ?? join(athenaRoot, 'commands');
+  const resolvedHooksDir = hooksDir ?? join(athenaRoot, 'hooks');
   const tier = tierOf(config);
   if (config.tools.includes('claude')) {
     if (expectedHash !== null) {
@@ -205,6 +208,19 @@ export const doctor = (
           `.claude/commands/${command}`,
           join(resolvedCommandsDir, command),
           `the ${command.replace(/\.md$/, '')} command`,
+        ),
+      );
+    }
+    // Byte-exact on purpose: a hook is executable text, so unlike the settings JSON there is
+    // no "formatting differs, meaning identical" case to forgive. One edited line is a
+    // different gate, and an unverified gate is exactly what this file exists to catch.
+    for (const hook of HOOKS) {
+      checks.push(
+        verbatimCheck(
+          projectDir,
+          `.claude/hooks/${hook}`,
+          join(resolvedHooksDir, hook),
+          `the ${hook.replace(/\.[a-z]+$/, '')} hook`,
         ),
       );
     }
