@@ -46,6 +46,18 @@ Done means every item in the handbook definition-of-done, in particular:
 See the [definition of done](https://github.com/willzhu16/platform/blob/v1/handbook/definition-of-done.md)
 and the [testing standard](https://github.com/willzhu16/platform/blob/v1/handbook/testing-standard.md).
 
+## Hooks remember the rules so you do not have to
+
+Claude-enabled repos ship `.claude/hooks/gate.mjs`, wired by `.claude/settings.json`. It runs
+lint and typecheck when you try to end a turn and blocks the turn while either is red, so
+"done" means the gate ran, not that you believed it would pass. A tool without hook support
+gets no such net: run the same gate yourself before you claim anything.
+
+- Never weaken a hook to get a turn to end. `doctor` compares hooks byte-for-byte and reports
+  an edit as drift — editing your own supervision is the one change nobody asked for.
+- **A command you keep running by hand belongs in a hook.** Notice the repetition, say so, and
+  propose the hook. A rule that runs is worth more than a rule that is written down.
+
 ## Tests come first
 
 - Write the test before the implementation. For a bug, it must fail for the right reason

@@ -9,6 +9,7 @@ import {
   compile,
   computeHash,
   extractBody,
+  HOOKS,
   main,
   readDeclaredHash,
   resolveLayers,
@@ -20,6 +21,7 @@ const athenaDir = dirname(fileURLToPath(import.meta.url));
 const instructionsDir = join(athenaDir, 'instructions');
 const permissionsDir = join(athenaDir, 'permissions');
 const commandsDir = join(athenaDir, 'commands');
+const hooksDir = join(athenaDir, 'hooks');
 
 const config: AthenaConfig = {
   athenaVersion: 'v1',
@@ -29,7 +31,7 @@ const config: AthenaConfig = {
   review: { enabled: false, reviewer: 'claude' },
 };
 const projectLayer = '# Project layer\n\nProject-specific note.\n';
-const inputs = { instructionsDir, permissionsDir, commandsDir, projectLayer };
+const inputs = { instructionsDir, permissionsDir, commandsDir, hooksDir, projectLayer };
 
 describe('resolveLayers', () => {
   it('orders layers by numeric prefix with targets after the stack', () => {
@@ -59,6 +61,25 @@ describe('compile', () => {
     expect(files['.claude/commands/conductor.md']).toBe(
       readFileSync(join(commandsDir, 'conductor.md'), 'utf8'),
     );
+  });
+
+  it('installs the gate hook verbatim for the claude tool', () => {
+    // The layers can ask for a green gate; only the hook makes "done" mean it actually ran.
+    // Shipping it byte-for-byte is what lets doctor call a weakened copy drift later.
+    const { files } = compile(config, inputs);
+
+    expect(files['.claude/hooks/gate.mjs']).toBe(readFileSync(join(hooksDir, 'gate.mjs'), 'utf8'));
+  });
+
+  it('wires every shipped hook into the installed permission profile', () => {
+    // A hook file nobody references is a dead script that reads like a gate. The profile
+    // must name each one, or compile is shipping reassurance rather than enforcement.
+    const { files } = compile(config, inputs);
+    const settings = files['.claude/settings.json'];
+
+    for (const hook of HOOKS) {
+      expect(settings).toContain(`.claude/hooks/${hook}`);
+    }
   });
 
   it('ships no claude commands or settings to a codex-only project', () => {
@@ -301,6 +322,7 @@ describe('the compiled header (a frozen contract, D-18)', () => {
       instructionsDir,
       permissionsDir,
       commandsDir,
+      hooksDir,
       projectLayer: '',
     });
 
@@ -332,6 +354,7 @@ describe('writeOutputs', () => {
       instructionsDir,
       permissionsDir,
       commandsDir,
+      hooksDir,
       projectLayer: '',
     });
     const projectDir = mkdtempSync(join(tmpdir(), 'athena-compile-'));
@@ -370,7 +393,7 @@ describe('compile CLI', () => {
 
       expect(lines).toHaveLength(1);
       expect(lines[0]).toMatch(
-        /^athena: compiled 3 file\(s\) \[sha:[0-9a-f]{16}\] -> CLAUDE\.md, \.claude\/settings\.json, \.claude\/commands\/conductor\.md$/,
+        /^athena: compiled 4 file\(s\) \[sha:[0-9a-f]{16}\] -> CLAUDE\.md, \.claude\/settings\.json, \.claude\/commands\/conductor\.md, \.claude\/hooks\/gate\.mjs$/,
       );
       // The project layer has to reach the compiled file, or a repo's own rules are the one
       // part of the harness that never ships.

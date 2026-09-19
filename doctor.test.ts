@@ -230,6 +230,57 @@ describe('doctor', () => {
       rmSync(projectDir, { recursive: true, force: true });
     }
   });
+
+  it('reports a weakened gate hook as drift', () => {
+    // The whole point of the hook is that an agent cannot call red work done. An agent that
+    // can edit the gate into `exit 0` has removed its own supervision, and that must read as
+    // drift rather than as a quiet local preference.
+    const athenaDir = dirname(fileURLToPath(import.meta.url));
+    const instructionsDir = join(athenaDir, 'instructions');
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));
+
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      mkdirSync(join(projectDir, '.claude', 'hooks'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({ athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claude'] }),
+      );
+      writeFileSync(join(projectDir, '.claude', 'hooks', 'gate.mjs'), 'exit 0\n');
+
+      const check = doctor(projectDir, instructionsDir).find(
+        (candidate) => candidate.name === '.claude/hooks/gate.mjs',
+      );
+
+      expect(check?.ok).toBe(false);
+      expect(check?.detail).toContain('content differs');
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a missing gate hook rather than passing a repo that has none', () => {
+    const athenaDir = dirname(fileURLToPath(import.meta.url));
+    const instructionsDir = join(athenaDir, 'instructions');
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));
+
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({ athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claude'] }),
+      );
+
+      const check = doctor(projectDir, instructionsDir).find(
+        (candidate) => candidate.name === '.claude/hooks/gate.mjs',
+      );
+
+      expect(check?.ok).toBe(false);
+      expect(check?.detail).toContain('missing');
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('sameJson (settings drift compares meaning, not bytes)', () => {
@@ -288,6 +339,7 @@ const buildProject = (projectDir: string, config: AthenaConfig, projectLayer = '
       instructionsDir: join(athenaRoot, 'instructions'),
       permissionsDir: join(athenaRoot, 'permissions'),
       commandsDir: join(athenaRoot, 'commands'),
+      hooksDir: join(athenaRoot, 'hooks'),
       projectLayer,
     }),
   );
@@ -334,6 +386,7 @@ describe('doctor (a correctly compiled repo passes every check)', () => {
         'CLAUDE.md',
         '.claude/settings.json',
         '.claude/commands/conductor.md',
+        '.claude/hooks/gate.mjs',
         '.codex/config.toml',
         '.codex/rules/artemis.rules',
         'AGENTS.md',
@@ -354,6 +407,9 @@ describe('doctor (a correctly compiled repo passes every check)', () => {
       expect(detail('AGENTS.md')).toMatch(/^fresh \(sha:[0-9a-f]{16}\)$/);
       expect(detail('.claude/settings.json')).toBe('matches the t1 profile');
       expect(detail('.claude/commands/conductor.md')).toBe('matches the conductor command');
+      // Names the hook without its extension, so the line reads as prose rather than as a
+      // filename repeated twice. The detail IS the report, so it is worth pinning down.
+      expect(detail('.claude/hooks/gate.mjs')).toBe('matches the gate hook');
       expect(detail('.codex/config.toml')).toBe('matches the codex t1 profile');
       expect(detail('.codex/rules/artemis.rules')).toBe('matches the codex t1 command rules');
       expect(detail('.github/ISSUE_TEMPLATE/task.yml')).toBe('present');
@@ -589,7 +645,7 @@ describe('doctor CLI (the exit code is the enforcement, not the printout)', () =
 
       const { lines } = runCli(projectDir);
 
-      expect(lines).toHaveLength(8);
+      expect(lines).toHaveLength(9);
       expect(lines[0]).toBe('PASS  config — stack=ts tier=1 tools=claude,codex');
       expect(lines[1]).toBe('FAIL  CLAUDE.md — missing — run `athena compile`');
     });
