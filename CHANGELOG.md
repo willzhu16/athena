@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/willzhu16/athena/compare/v1.5.0...v1.6.0) (2026-09-19)
+
+
+### Features
+
+* **hooks:** make a green gate the condition for ending a turn ([#21](https://github.com/willzhu16/athena/issues/21)) ([2f07f4f](https://github.com/willzhu16/athena/commit/2f07f4f0aff499d19756fe3a90e259f40943cfcb))
+
 ## [1.5.0](https://github.com/willzhu16/athena/compare/v1.4.0...v1.5.0) (2026-09-16)
 
 
