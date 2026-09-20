@@ -108,8 +108,23 @@ export interface HarnessReport {
  * text is the least effective harness edit there is, so a rising number here is a cost to
  * justify, not headroom to spend. The section earns it by pointing at a gate that runs on
  * its own; prose that only asks an agent to remember something does not.
+ *
+ * Raised 3800 -> 3900 on 2026-09-19, and this one was not free. It pays for three
+ * corrections: 20-stack-python listed under "what the linter can't check" three rules ruff
+ * now checks, 30-target-workers said `nodejs_compat` was opt-in when the template ships it
+ * on, and the session-log format had drifted from platform's template. Absorbing it was
+ * tried first and mostly failed — deduplicating the Honesty section against the hooks
+ * section and cutting the python layer's stale bullets clawed back most of +141, not all of
+ * it. Two link-consolidation attempts made it worse and were reverted.
+ *
+ * The number to question next is what this budget measures, not how big it is. The worst
+ * case is ts+vscode-ext+workers, a two-target configuration no repo in the fleet loads. The
+ * bundles that actually ship are far smaller (ts+workers ~3419, python+none ~2841), so this
+ * ceiling is pricing a hypothetical while the real ones have hundreds of tokens spare.
+ * Budgeting the shipping configurations instead would be a truer gate — a design change,
+ * logged in TODO.md rather than smuggled in here.
  */
-export const BUNDLE_TOKEN_BUDGET = 3800;
+export const BUNDLE_TOKEN_BUDGET = 3900;
 
 /** Cheap offline stand-in for a real tokenizer — no dependency, consistent across runs. */
 const CHARS_PER_TOKEN = 4;

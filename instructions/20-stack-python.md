@@ -4,21 +4,19 @@ Toolchain (D-21): uv (packaging + lockfile) · Ruff (lint + format) · pyright (
 strict) · pytest (with coverage). Lockfile-first: `uv.lock` is committed and installs use
 `uv sync --frozen`.
 
-Ruff already enforces the mechanical rules (formatting, import order, common lints).
-**Do not restate or hand-fix what Ruff owns.** This layer states only what a linter can't.
+Ruff enforces the mechanical rules, and that now includes three this layer used to only ask
+for: `snake_case` naming (`N`), annotated signatures and precise types over `Any` (`ANN`,
+relaxed in `tests/`), and functions under 40 statements (`PLR0915`). **Do not restate or
+hand-fix what Ruff owns** — when it is red, read the rule code rather than guessing.
 
-## What the linter can't check
+## What the linter still cannot check
 
-- **Names carry meaning.** Descriptive `snake_case`; no single-letter names except loop
-  indices; no abbreviations unless industry-standard. A good name removes a comment.
-- **Small functions.** Keep functions under ~40 lines; extract named helpers when one
-  grows past that.
-- **Type everything at the boundaries.** Annotate public function signatures; prefer
-  precise types over `Any`. pyright runs strict — a passing typecheck is part of done.
+- **A name has to mean something.** Ruff checks the case convention, not the word. `data`,
+  `tmp` and `do_it` all pass it and all tell the next reader nothing.
 - **Prefer the standard library** for anything under ~50 lines before adding a dependency
   (this is also the anti-slopsquatting default, 10-security).
-- **Explicit over clever.** No wildcard imports; no mutable default arguments; guard
-  clauses over deep nesting.
+- **Explicit over clever.** Ruff catches wildcard imports and mutable defaults. It does not
+  catch a short function that is simply hard to follow, so prefer guard clauses to nesting.
 
 ## Testing
 

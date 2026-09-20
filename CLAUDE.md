@@ -47,7 +47,7 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   reason); every flag-bearing
   deny rule carries a written acknowledgement (order-sensitive patterns are evadable —
   REVIEW-2026-07-15 #7); the worst-case compiled bundle stays under `BUNDLE_TOKEN_BUDGET`
-  (3800, ratcheted to the measured worst case rather than invented; run harness-lint for the
+  (3900, ratcheted to the measured worst case rather than invented; run harness-lint for the
   current estimate); and no rule line repeats inside one
   bundle. It also covers `hooks/`: the directory must match `HOOKS`, and every shipped hook
   must be referenced by all three permission profiles, since a hook no profile names is a
