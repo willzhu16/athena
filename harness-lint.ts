@@ -1182,6 +1182,22 @@ export const harnessLint = (
 };
 
 /** Write the measured scorecard. The only thing in this module that touches the disk. */
+/**
+ * Everything `--write` puts on disk, in one place and taking the root as an argument.
+ *
+ * Extracted from `main` for the same reason `anyFailed` was: `main` resolves its own
+ * directory from `import.meta.url`, which no test can redirect, so the write path could only
+ * ever be exercised by writing athena's own committed files. Here it runs against a scratch
+ * directory, and the ratchet's one-way rule is covered rather than merely asserted.
+ */
+export const writeHarnessArtifacts = (athenaRoot: string, scorecard: Scorecard): string[] => [
+  writeScorecard(athenaRoot, scorecard),
+  // Clicks in the same breath, and only ever tighter. There is deliberately no flag that
+  // loosens it: that path is an override entry the owner approves, so it arrives as a
+  // reviewable diff rather than as a command anyone can run.
+  writeRatchet(athenaRoot, tightenedRatchet(readRatchet(athenaRoot), liveFloors(athenaRoot))),
+];
+
 /** Persist the clicked ratchet. Paired with `tightenedRatchet`, which is where the rule lives. */
 export const writeRatchet = (athenaRoot: string, ratchet: RatchetFile): string => {
   const path = join(athenaRoot, RATCHET_FILE);
@@ -1248,18 +1264,10 @@ export const main = (): void => {
   // than only on the screen of whoever happened to run this.
   const written =
     process.argv.includes('--write') && report.scorecard !== null
-      ? writeScorecard(athenaDir, report.scorecard)
-      : null;
-  if (written !== null) {
-    console.log(`wrote ${written}\n`);
-    // The ratchet clicks in the same breath, and only ever tighter. There is deliberately no
-    // flag that loosens it: that path is an override entry someone writes and the owner
-    // approves, so it arrives as a reviewable diff rather than a command anyone can run.
-    const clicked = writeRatchet(
-      athenaDir,
-      tightenedRatchet(readRatchet(athenaDir), liveFloors(athenaDir)),
-    );
-    console.log(`wrote ${clicked}\n`);
+      ? writeHarnessArtifacts(athenaDir, report.scorecard)
+      : [];
+  for (const path of written) {
+    console.log(`wrote ${path}\n`);
   }
   // Re-measure after a write so the printed report and the exit code describe the file that
   // is now on disk, and a real failure still fails the run.

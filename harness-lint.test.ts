@@ -10,6 +10,7 @@ import {
   type BundleCost,
   bashCommand,
   budgetCheck,
+  buildScorecard,
   bundleCosts,
   COHERENCE_FILE,
   type CoherenceClaim,
@@ -35,6 +36,7 @@ import {
   main,
   normalizeLine,
   printReport,
+  RATCHET_FILE,
   type RatchetFile,
   type RatchetFloor,
   type RatchetOverride,
@@ -54,6 +56,7 @@ import {
   skillsManifestCheck,
   tightenedRatchet,
   unsoundDenies,
+  writeHarnessArtifacts,
   writeScorecard,
 } from './harness-lint.ts';
 
@@ -1532,6 +1535,69 @@ describe('quality numbers move one way', () => {
       expect(() => readRatchet(dir)).toThrow('needs both');
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('what --write puts on disk', () => {
+  /** A scratch athena root carrying just the two files the write path reads and rewrites. */
+  const scratchRoot = (tightest: number, live: number): string =>
+    scratchDir({
+      'ratchet.json': JSON.stringify({
+        floors: {
+          mutationBreak: { direction: 'floor', tightest, source: 'stryker.config.json' },
+        },
+        overrides: [],
+      }),
+      'stryker.config.json': JSON.stringify({ thresholds: { break: live } }),
+    });
+
+  const scorecardOf = (root: string) =>
+    buildScorecard(
+      bundleCosts(instructionsDir),
+      [],
+      { claims: [], acknowledgedUnsoundDenies: [] },
+      [],
+      [],
+      [],
+      join(root, 'skills'),
+    );
+
+  it('writes both the scorecard and the ratchet, naming each', () => {
+    const root = scratchRoot(87, 87);
+    try {
+      const written = writeHarnessArtifacts(root, scorecardOf(root));
+
+      expect(written).toHaveLength(2);
+      expect(written.some((path) => path.endsWith(SCORECARD_FILE))).toBe(true);
+      expect(written.some((path) => path.endsWith(RATCHET_FILE))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('clicks a floor tighter when the live value has improved', () => {
+    const root = scratchRoot(87, 91);
+    try {
+      writeHarnessArtifacts(root, scorecardOf(root));
+
+      expect(readRatchet(root).floors.mutationBreak?.tightest).toBe(91);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to launder a loosening into the record', () => {
+    // The rule that makes this a ratchet rather than a log. --write is a command anyone can
+    // run, so if it recorded a lowered floor the override path would be pointless: loosen,
+    // regenerate, and the diff would show a routine scorecard update.
+    const root = scratchRoot(87, 70);
+    try {
+      writeHarnessArtifacts(root, scorecardOf(root));
+
+      expect(readRatchet(root).floors.mutationBreak?.tightest).toBe(87);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
