@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/willzhu16/athena/compare/v1.6.1...v1.7.0) (2026-09-21)
+
+
+### Features
+
+* **skills:** ship procedure that costs nothing until it is needed ([#25](https://github.com/willzhu16/athena/issues/25)) ([2f01fc9](https://github.com/willzhu16/athena/commit/2f01fc99246ddebfb4fc8517319ceb5013229c4d))
+
 ## [1.6.1](https://github.com/willzhu16/athena/compare/v1.6.0...v1.6.1) (2026-09-21)
 
 
