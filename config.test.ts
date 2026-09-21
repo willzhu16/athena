@@ -12,6 +12,7 @@ const inputs = {
   permissionsDir: join(athenaDir, 'permissions'),
   commandsDir: join(athenaDir, 'commands'),
   hooksDir: join(athenaDir, 'hooks'),
+  skillsDir: join(athenaDir, 'skills'),
   projectLayer: '',
 };
 const valid = { athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['codex'] };

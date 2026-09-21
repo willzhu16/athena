@@ -10,6 +10,7 @@ import {
   HOOKS,
   KNOWN_TIERS,
   SETTINGS_PROFILE,
+  SKILLS,
   settingsProfileFor,
 } from './compile.ts';
 
@@ -523,6 +524,17 @@ export interface Scorecard {
     perConfig: Record<string, number>;
   };
   commands: Record<string, number>;
+  /**
+   * Priced in two halves on purpose. `alwaysOn` is what every request pays for the whole
+   * skill surface — the descriptions — and is the number to watch. `onDemand` is what a
+   * body costs only when something routes to it, which is the saving the mechanism exists
+   * for. A single total would hide exactly the ratio worth knowing.
+   */
+  skills: {
+    budgetTokens: number;
+    alwaysOnTokens: number;
+    onDemandTokens: Record<string, number>;
+  };
   coverage: {
     claims: number;
     advisoryClaims: number;
@@ -693,6 +705,136 @@ export const hooksWiredCheck = (permissionsDir: string): Finding[] =>
     };
   });
 
+/** Skill directories on disk, so the manifest is checked against reality rather than itself. */
+const skillDirs = (skillsDir: string): string[] =>
+  existsSync(skillsDir)
+    ? readdirSync(skillsDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort()
+    : [];
+
+const readSkill = (skillsDir: string, name: string): string =>
+  readFileSync(join(skillsDir, name, 'SKILL.md'), 'utf8');
+
+/**
+ * Ceiling on the combined skill descriptions. This is the number that matters: descriptions
+ * are preloaded on every request, bodies are not, so the whole point of moving procedure into
+ * a skill is defeated if the descriptions grow like a layer. Deliberately far tighter than
+ * the bundle budget, because this is the always-on cost of the on-demand mechanism.
+ */
+export const SKILL_DESCRIPTION_BUDGET = 400;
+
+/** The `description:` line of a skill, or null when the frontmatter is missing or unlabelled. */
+export const skillDescription = (source: string): string | null => {
+  const match = source.match(FRONTMATTER);
+  if (!match) {
+    return null;
+  }
+  const described = match[1].match(/^description:\s*(\S.*)$/m);
+  return described ? described[1].trim() : null;
+};
+
+/**
+ * A skill with no description never loads. Claude Code routes on the description alone, so an
+ * absent one is not a cosmetic gap: the body ships and is unreachable, which reads in a diff
+ * exactly like a skill that works.
+ */
+export const skillFrontmatterChecks = (skillsDir: string): Finding[] =>
+  skillDirs(skillsDir).map((name) => {
+    const description = skillDescription(readSkill(skillsDir, name));
+    if (description === null) {
+      return { name: `skill ${name}`, ok: false, detail: 'no description in frontmatter' };
+    }
+    return { name: `skill ${name}`, ok: true, detail: `routes on ${description.length} chars` };
+  });
+
+/** A skill directory SKILLS does not list never ships; a listed one absent makes compile throw. */
+export const skillsManifestCheck = (skillsDir: string): Finding => {
+  const onDisk = skillDirs(skillsDir);
+  const listed: string[] = [...SKILLS];
+  const orphans = onDisk.filter((name) => !listed.includes(name));
+  const absent = listed.filter((name) => !onDisk.includes(name));
+  const problems = [
+    ...(orphans.length > 0 ? [`on disk but not in SKILLS: ${orphans.join(', ')}`] : []),
+    ...(absent.length > 0 ? [`in SKILLS but not on disk: ${absent.join(', ')}`] : []),
+  ];
+  return {
+    name: 'skills manifest',
+    ok: problems.length === 0,
+    detail: problems.length === 0 ? `${listed.length} skill(s), all present` : problems.join('; '),
+  };
+};
+
+/** Always-on cost of the skill surface: the descriptions, never the bodies. */
+export const skillDescriptionCost = (skillsDir: string): number =>
+  skillDirs(skillsDir).reduce(
+    (total, name) =>
+      total + estimateTokens((skillDescription(readSkill(skillsDir, name)) ?? '').length),
+    0,
+  );
+
+export const skillBudgetCheck = (skillsDir: string): Finding => {
+  const cost = skillDescriptionCost(skillsDir);
+  const ok = cost <= SKILL_DESCRIPTION_BUDGET;
+  return {
+    name: 'skill descriptions',
+    ok,
+    detail: ok
+      ? `~${cost} always-on tokens (budget ${SKILL_DESCRIPTION_BUDGET})`
+      : `~${cost} always-on tokens exceeds budget ${SKILL_DESCRIPTION_BUDGET}`,
+  };
+};
+
+/** Content words of a description, for comparing what two skills claim to cover. */
+const claimWords = (description: string): Set<string> =>
+  new Set(
+    normalizeLine(description)
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 3),
+  );
+
+/**
+ * Above this share of shared content words, two descriptions are describing the same
+ * capability and routing between them is a coin flip.
+ */
+const AMBIGUITY_THRESHOLD = 0.6;
+
+/**
+ * Two skills whose descriptions overlap heavily are a measured failure class, not a style
+ * nit: the router picks between them on wording alone, so whichever it picks is arbitrary
+ * and the other may as well not exist. Reported per pair, because the fix is to sharpen one
+ * description against the other rather than to shorten either.
+ */
+export const skillAmbiguityCheck = (skillsDir: string): Finding => {
+  const described = skillDirs(skillsDir)
+    .map((name) => ({
+      name,
+      words: claimWords(skillDescription(readSkill(skillsDir, name)) ?? ''),
+    }))
+    .filter((entry) => entry.words.size > 0);
+  const collisions: string[] = [];
+  for (let first = 0; first < described.length; first++) {
+    for (let second = first + 1; second < described.length; second++) {
+      const a = described[first];
+      const b = described[second];
+      const shared = [...a.words].filter((word) => b.words.has(word)).length;
+      const overlap = shared / Math.min(a.words.size, b.words.size);
+      if (overlap > AMBIGUITY_THRESHOLD) {
+        collisions.push(`${a.name} vs ${b.name} (${Math.round(overlap * 100)}% shared)`);
+      }
+    }
+  }
+  return {
+    name: 'skill ambiguity',
+    ok: collisions.length === 0,
+    detail:
+      collisions.length === 0
+        ? `${described.length} skill(s), each claiming distinct ground`
+        : `descriptions overlap, so routing is arbitrary: ${collisions.join('; ')}`,
+  };
+};
+
 /** Lines a command shares with an instruction layer: not waste, but they drift in pairs. */
 export const commandEchoes = (instructionsDir: string, commandsDir: string): Echo[] => {
   const byLine = new Map<string, string[]>();
@@ -786,6 +928,7 @@ export const buildScorecard = (
   unclaimed: string[],
   layerEchoes: Echo[],
   cmdEchoes: Echo[],
+  skillsDir: string,
 ): Scorecard => {
   const worst = costs.reduce((a, b) => (b.estimatedTokens > a.estimatedTokens ? b : a));
   const perConfig: Record<string, number> = {};
@@ -795,6 +938,10 @@ export const buildScorecard = (
   const commandTokens: Record<string, number> = {};
   for (const command of commands) {
     commandTokens[command.name] = command.estimatedTokens;
+  }
+  const skillBodies: Record<string, number> = {};
+  for (const name of skillDirs(skillsDir)) {
+    skillBodies[name] = estimateTokens(readSkill(skillsDir, name).length);
   }
   return {
     note: SCORECARD_NOTE,
@@ -807,6 +954,11 @@ export const buildScorecard = (
       perConfig,
     },
     commands: commandTokens,
+    skills: {
+      budgetTokens: SKILL_DESCRIPTION_BUDGET,
+      alwaysOnTokens: skillDescriptionCost(skillsDir),
+      onDemandTokens: skillBodies,
+    },
     coverage: {
       claims: coherence.claims.length,
       advisoryClaims: coherence.claims.filter((claim) => claim.enforcement === 'advisory').length,
@@ -849,10 +1001,12 @@ export const harnessLint = (
   permissionsDir: string,
   commandsDir?: string,
   hooksDir?: string,
+  skillsDir?: string,
 ): HarnessReport => {
   const athenaRoot = dirname(fileURLToPath(import.meta.url));
   const resolvedCommandsDir = commandsDir ?? join(athenaRoot, 'commands');
   const resolvedHooksDir = hooksDir ?? join(athenaRoot, 'hooks');
+  const resolvedSkillsDir = skillsDir ?? join(athenaRoot, 'skills');
   let coherence: CoherenceFile;
   try {
     coherence = readCoherence(permissionsDir);
@@ -873,7 +1027,15 @@ export const harnessLint = (
   const layerEchoes = crossLayerEchoes(instructionsDir);
   const cmdEchoes = commandEchoes(instructionsDir, resolvedCommandsDir);
   const unclaimed = unclaimedDenies(permissionsDir, coherence.claims);
-  const scorecard = buildScorecard(costs, commands, coherence, unclaimed, layerEchoes, cmdEchoes);
+  const scorecard = buildScorecard(
+    costs,
+    commands,
+    coherence,
+    unclaimed,
+    layerEchoes,
+    cmdEchoes,
+    resolvedSkillsDir,
+  );
   return {
     findings: [
       ...claimChecks(coherence.claims, instructionsDir, permissionsDir),
@@ -885,6 +1047,10 @@ export const harnessLint = (
       commandDuplicateCheck(resolvedCommandsDir),
       commandCrossLinkCheck(resolvedCommandsDir),
       hooksManifestCheck(resolvedHooksDir),
+      skillsManifestCheck(resolvedSkillsDir),
+      ...skillFrontmatterChecks(resolvedSkillsDir),
+      skillBudgetCheck(resolvedSkillsDir),
+      skillAmbiguityCheck(resolvedSkillsDir),
       ...hooksWiredCheck(permissionsDir),
       ...codexSecretsCheck(permissionsDir),
       scorecardCheck(dirname(resolvedCommandsDir), scorecard),
