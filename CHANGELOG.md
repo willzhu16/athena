@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/willzhu16/athena/compare/v1.6.0...v1.6.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **instructions:** stop claiming rules the linters now enforce ([#23](https://github.com/willzhu16/athena/issues/23)) ([1d288b1](https://github.com/willzhu16/athena/commit/1d288b19b6b8660e20855ac86d91ef451f819476))
+
 ## [1.6.0](https://github.com/willzhu16/athena/compare/v1.5.0...v1.6.0) (2026-09-19)
 
 
