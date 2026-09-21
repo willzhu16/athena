@@ -13,6 +13,7 @@ import {
   main,
   readDeclaredHash,
   resolveLayers,
+  SKILLS,
   validateConfig,
   writeOutputs,
 } from './compile.ts';
@@ -22,6 +23,7 @@ const instructionsDir = join(athenaDir, 'instructions');
 const permissionsDir = join(athenaDir, 'permissions');
 const commandsDir = join(athenaDir, 'commands');
 const hooksDir = join(athenaDir, 'hooks');
+const skillsDir = join(athenaDir, 'skills');
 
 const config: AthenaConfig = {
   athenaVersion: 'v1',
@@ -31,7 +33,14 @@ const config: AthenaConfig = {
   review: { enabled: false, reviewer: 'claude' },
 };
 const projectLayer = '# Project layer\n\nProject-specific note.\n';
-const inputs = { instructionsDir, permissionsDir, commandsDir, hooksDir, projectLayer };
+const inputs = {
+  instructionsDir,
+  permissionsDir,
+  commandsDir,
+  hooksDir,
+  skillsDir,
+  projectLayer,
+};
 
 describe('resolveLayers', () => {
   it('orders layers by numeric prefix with targets after the stack', () => {
@@ -69,6 +78,18 @@ describe('compile', () => {
     const { files } = compile(config, inputs);
 
     expect(files['.claude/hooks/gate.mjs']).toBe(readFileSync(join(hooksDir, 'gate.mjs'), 'utf8'));
+  });
+
+  it('installs each skill at the path Claude Code looks for', () => {
+    // .claude/skills/<name>/SKILL.md is the only layout Claude Code discovers. A skill
+    // written to any other path ships bytes nothing will ever read.
+    const { files } = compile(config, inputs);
+
+    for (const skill of SKILLS) {
+      expect(files[`.claude/skills/${skill}/SKILL.md`]).toBe(
+        readFileSync(join(skillsDir, skill, 'SKILL.md'), 'utf8'),
+      );
+    }
   });
 
   it('wires every shipped hook into the installed permission profile', () => {
@@ -323,6 +344,7 @@ describe('the compiled header (a frozen contract, D-18)', () => {
       permissionsDir,
       commandsDir,
       hooksDir,
+      skillsDir,
       projectLayer: '',
     });
 
@@ -355,6 +377,7 @@ describe('writeOutputs', () => {
       permissionsDir,
       commandsDir,
       hooksDir,
+      skillsDir,
       projectLayer: '',
     });
     const projectDir = mkdtempSync(join(tmpdir(), 'athena-compile-'));
@@ -393,7 +416,7 @@ describe('compile CLI', () => {
 
       expect(lines).toHaveLength(1);
       expect(lines[0]).toMatch(
-        /^athena: compiled 4 file\(s\) \[sha:[0-9a-f]{16}\] -> CLAUDE\.md, \.claude\/settings\.json, \.claude\/commands\/conductor\.md, \.claude\/hooks\/gate\.mjs$/,
+        /^athena: compiled 5 file\(s\) \[sha:[0-9a-f]{16}\] -> CLAUDE\.md, \.claude\/settings\.json, \.claude\/commands\/conductor\.md, \.claude\/hooks\/gate\.mjs, \.claude\/skills\/verify-change\/SKILL\.md$/,
       );
       // The project layer has to reach the compiled file, or a repo's own rules are the one
       // part of the harness that never ships.

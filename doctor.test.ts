@@ -259,6 +259,37 @@ describe('doctor', () => {
     }
   });
 
+  it('reports an edited skill description as drift', () => {
+    // The description is the routing surface: Claude Code preloads it and decides from it
+    // whether to load the body at all. Narrowing one locally is how a skill quietly stops
+    // being reachable, which looks identical to a skill that was never needed.
+    const athenaDir = dirname(fileURLToPath(import.meta.url));
+    const instructionsDir = join(athenaDir, 'instructions');
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));
+
+    try {
+      mkdirSync(join(projectDir, '.athena'), { recursive: true });
+      mkdirSync(join(projectDir, '.claude', 'skills', 'verify-change'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.athena', 'config.json'),
+        JSON.stringify({ athenaVersion: 'v1', stack: 'ts', targets: [], tools: ['claude'] }),
+      );
+      writeFileSync(
+        join(projectDir, '.claude', 'skills', 'verify-change', 'SKILL.md'),
+        ['---', 'description: nothing', '---', ''].join('\n'),
+      );
+
+      const check = doctor(projectDir, instructionsDir).find(
+        (candidate) => candidate.name === '.claude/skills/verify-change/SKILL.md',
+      );
+
+      expect(check?.ok).toBe(false);
+      expect(check?.detail).toContain('content differs');
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('reports a missing gate hook rather than passing a repo that has none', () => {
     const athenaDir = dirname(fileURLToPath(import.meta.url));
     const instructionsDir = join(athenaDir, 'instructions');
@@ -340,6 +371,7 @@ const buildProject = (projectDir: string, config: AthenaConfig, projectLayer = '
       permissionsDir: join(athenaRoot, 'permissions'),
       commandsDir: join(athenaRoot, 'commands'),
       hooksDir: join(athenaRoot, 'hooks'),
+      skillsDir: join(athenaRoot, 'skills'),
       projectLayer,
     }),
   );
@@ -387,6 +419,7 @@ describe('doctor (a correctly compiled repo passes every check)', () => {
         '.claude/settings.json',
         '.claude/commands/conductor.md',
         '.claude/hooks/gate.mjs',
+        '.claude/skills/verify-change/SKILL.md',
         '.codex/config.toml',
         '.codex/rules/artemis.rules',
         'AGENTS.md',
@@ -645,7 +678,7 @@ describe('doctor CLI (the exit code is the enforcement, not the printout)', () =
 
       const { lines } = runCli(projectDir);
 
-      expect(lines).toHaveLength(9);
+      expect(lines).toHaveLength(10);
       expect(lines[0]).toBe('PASS  config — stack=ts tier=1 tools=claude,codex');
       expect(lines[1]).toBe('FAIL  CLAUDE.md — missing — run `athena compile`');
     });

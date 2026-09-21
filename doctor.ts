@@ -10,6 +10,7 @@ import {
   computeHash,
   extractBody,
   HOOKS,
+  SKILLS,
   settingsProfileFor,
   tierOf,
   validateConfig,
@@ -157,6 +158,7 @@ export const doctor = (
   permissionsDir?: string,
   commandsDir?: string,
   hooksDir?: string,
+  skillsDir?: string,
 ): Check[] => {
   if (!existsSync(join(projectDir, '.athena', 'config.json'))) {
     return [{ name: 'config', ok: false, detail: '.athena/config.json missing' }];
@@ -188,6 +190,7 @@ export const doctor = (
   const resolvedPermissionsDir = permissionsDir ?? join(athenaRoot, 'permissions');
   const resolvedCommandsDir = commandsDir ?? join(athenaRoot, 'commands');
   const resolvedHooksDir = hooksDir ?? join(athenaRoot, 'hooks');
+  const resolvedSkillsDir = skillsDir ?? join(athenaRoot, 'skills');
   const tier = tierOf(config);
   if (config.tools.includes('claude')) {
     if (expectedHash !== null) {
@@ -221,6 +224,19 @@ export const doctor = (
           `.claude/hooks/${hook}`,
           join(resolvedHooksDir, hook),
           `the ${hook.replace(/\.[a-z]+$/, '')} hook`,
+        ),
+      );
+    }
+    // A skill ships verbatim like a command, and its description matters more than its body:
+    // Claude Code routes on the description, so an edit there silently changes whether the
+    // skill loads at all. Drift is a skill that stops being reachable, not one that misbehaves.
+    for (const skill of SKILLS) {
+      checks.push(
+        verbatimCheck(
+          projectDir,
+          `.claude/skills/${skill}/SKILL.md`,
+          join(resolvedSkillsDir, skill, 'SKILL.md'),
+          `the ${skill} skill`,
         ),
       );
     }

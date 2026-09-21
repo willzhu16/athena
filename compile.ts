@@ -30,6 +30,7 @@ export interface CompileInputs {
   permissionsDir: string;
   commandsDir: string;
   hooksDir: string;
+  skillsDir: string;
   projectLayer: string;
 }
 
@@ -93,6 +94,18 @@ export const COMMANDS = ['conductor.md'] as const;
  * on comparing them verbatim.
  */
 export const HOOKS = ['gate.mjs'] as const;
+
+/**
+ * Skills compile installs into `.claude/skills/<name>/SKILL.md`. Claude Code preloads each
+ * skill's DESCRIPTION and loads the body only when it decides the skill applies, so a skill
+ * is how procedure reaches an agent without being paid for on every request — the opposite
+ * trade from an instruction layer, which is always in context and must therefore stay short.
+ *
+ * That makes the description the whole mechanism: it is the only part always loaded, and a
+ * body nobody routes to might as well not ship. harness-lint prices and polices descriptions
+ * for exactly that reason.
+ */
+export const SKILLS = ['verify-change'] as const;
 
 /** Validate untrusted JSON before either CLI reads fields or constructs layer paths. */
 export function validateConfig(value: unknown): asserts value is AthenaConfig {
@@ -218,6 +231,12 @@ export const compile = (config: AthenaConfig, inputs: CompileInputs): CompiledOu
       for (const hook of HOOKS) {
         files[`.claude/hooks/${hook}`] = readFileSync(join(inputs.hooksDir, hook), 'utf8');
       }
+      for (const skill of SKILLS) {
+        files[`.claude/skills/${skill}/SKILL.md`] = readFileSync(
+          join(inputs.skillsDir, skill, 'SKILL.md'),
+          'utf8',
+        );
+      }
     } else if (tool === 'codex') {
       files['AGENTS.md'] = compiled;
       files['.codex/config.toml'] = readProfile(inputs.permissionsDir, codexProfileFor(tier));
@@ -255,6 +274,7 @@ export const main = (): void => {
     permissionsDir: join(athenaDir, 'permissions'),
     commandsDir: join(athenaDir, 'commands'),
     hooksDir: join(athenaDir, 'hooks'),
+    skillsDir: join(athenaDir, 'skills'),
     projectLayer: readProjectLayer(projectDir),
   });
   const written = writeOutputs(projectDir, outputs);

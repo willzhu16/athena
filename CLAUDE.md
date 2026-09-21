@@ -20,7 +20,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
     `permissions/t<tier>.settings.json`) + one `.claude/commands/<name>.md` per entry in
     `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`) +
     one `.claude/hooks/<name>` per entry in `HOOKS` (verbatim copy of `hooks/<name>`,
-    currently just `gate.mjs`);
+    currently just `gate.mjs`) + one `.claude/skills/<name>/SKILL.md` per entry in
+    `SKILLS` (currently just `verify-change`);
     tool `codex` → `AGENTS.md` + `.codex/config.toml` (file access) +
     `.codex/rules/artemis.rules` (commands), both from `permissions/codex.t<tier>.*`, and
     no `.claude/` surface or slash commands. Codex splits file and command policy across
@@ -143,6 +144,21 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   - harness-lint checks both halves: the directory matches `HOOKS`, and every shipped hook
     is referenced by all three profiles. A hook nobody references is a dead script that
     reads like a gate, which is worse than having no hook at all.
+- `skills/<name>/SKILL.md` — procedure an agent loads **on demand**. Claude Code preloads
+  each skill's `description` and fetches the body only when it decides the skill applies, so
+  a skill is the opposite trade from an instruction layer: the layer is always in context and
+  must stay short, the skill body is free until it is needed. Measured on `verify-change`:
+  **31 always-on tokens against a 705-token body.**
+  - **The description is the mechanism, not a label.** It is the only part always loaded and
+    the only thing routing sees, so harness-lint gates it: every skill needs one
+    (`skillFrontmatterChecks`), their combined always-on cost has its own budget
+    (`SKILL_DESCRIPTION_BUDGET`, 400, far tighter than the bundle), and no two may describe
+    the same ground (`skillAmbiguityCheck`) — overlapping descriptions make routing a coin
+    flip, so whichever loses may as well not ship.
+  - The scorecard prices the two halves separately. One total would hide the ratio, which is
+    the only number that says whether moving something into a skill was worth it.
+  - Write the description by capability, not topic: what problem classes it handles, what it
+    deliberately does not, in task language. `when_to_use` carries the triggers.
 - `conductor.md`, `task-packet.md`, `review-protocol.md`, `FOREMAN-NOTES.md` — process docs
   for multi-agent work (task packets, review rules, max-3-concurrency conductor pattern).
   FOREMAN-NOTES is the parking lot for out-of-scope runtime ideas (D-17/D-28).

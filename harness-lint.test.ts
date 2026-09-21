@@ -36,8 +36,15 @@ import {
   readCoherence,
   readProfile,
   SCORECARD_FILE,
+  SKILL_DESCRIPTION_BUDGET,
   scorecardCheck,
   serializeScorecard,
+  skillAmbiguityCheck,
+  skillBudgetCheck,
+  skillDescription,
+  skillDescriptionCost,
+  skillFrontmatterChecks,
+  skillsManifestCheck,
   unsoundDenies,
   writeScorecard,
 } from './harness-lint.ts';
@@ -1177,5 +1184,221 @@ describe('shipped hooks', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('shipped skills', () => {
+  const athenaSkills = join(athenaDir, 'skills');
+  const skill = (description: string, body = 'do the thing\n'): string =>
+    ['---', `description: ${description}`, '---', '', body].join('\n');
+
+  it('accepts a skills directory holding exactly what SKILLS lists', () => {
+    const finding = skillsManifestCheck(athenaSkills);
+
+    expect(finding.ok).toBe(true);
+    expect(finding.detail).toBe('1 skill(s), all present');
+  });
+
+  it('reports a skill directory no manifest entry ships', () => {
+    const dir = scratchDir({
+      'verify-change/SKILL.md': skill('a'),
+      'orphan/SKILL.md': skill('b'),
+    });
+    try {
+      expect(skillsManifestCheck(dir).detail).toBe('on disk but not in SKILLS: orphan');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a manifest entry with no directory behind it', () => {
+    const dir = scratchDir({ 'unrelated/SKILL.md': skill('a') });
+    try {
+      const finding = skillsManifestCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('in SKILLS but not on disk: verify-change');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads the description out of frontmatter', () => {
+    expect(skillDescription(skill('routes on this'))).toBe('routes on this');
+  });
+
+  it.each([
+    ['no frontmatter at all', '# Just a heading\n'],
+    ['frontmatter without a description', ['---', 'name: thing', '---', ''].join('\n')],
+    ['a description that is only whitespace', ['---', 'description:   ', '---', ''].join('\n')],
+  ])('finds no description in %s', (_case, source) => {
+    expect(skillDescription(source)).toBeNull();
+  });
+
+  it('fails a skill whose body ships but whose description does not', () => {
+    // The failure mode this exists for: the body is fine, so nothing looks wrong, and the
+    // skill is simply never routed to. Unreachable and indistinguishable from unneeded.
+    const dir = scratchDir({ 'verify-change/SKILL.md': '# No frontmatter\n\nbody\n' });
+    try {
+      const [finding] = skillFrontmatterChecks(dir);
+
+      expect(finding?.ok).toBe(false);
+      expect(finding?.detail).toBe('no description in frontmatter');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prices the descriptions, not the bodies', () => {
+    // The whole trade: an enormous body is free until something routes to it, so only the
+    // description counts against the always-on budget.
+    const dir = scratchDir({ 'verify-change/SKILL.md': skill('short', 'x'.repeat(40_000)) });
+    try {
+      const finding = skillBudgetCheck(dir);
+
+      expect(finding.ok).toBe(true);
+      expect(skillDescriptionCost(dir)).toBeLessThan(10);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails when the descriptions together outgrow the always-on budget', () => {
+    const dir = scratchDir({ 'verify-change/SKILL.md': skill('word '.repeat(500)) });
+    try {
+      const finding = skillBudgetCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('exceeds budget');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts skills that claim distinct ground', () => {
+    const dir = scratchDir({
+      'alpha/SKILL.md': skill('Run the repository gates in cheapest-first order'),
+      'beta/SKILL.md': skill('Rotate a leaked credential and purge it from history'),
+    });
+    try {
+      expect(skillAmbiguityCheck(dir).ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails two skills describing the same capability', () => {
+    // Routing between overlapping descriptions is a coin flip, so whichever loses may as
+    // well not ship. Naming the pair matters: the fix is to sharpen one against the other.
+    const dir = scratchDir({
+      'alpha/SKILL.md': skill('Verify changes by running repository gates before merging'),
+      'beta/SKILL.md': skill('Verify changes before merging by running repository gates'),
+    });
+    try {
+      const finding = skillAmbiguityCheck(dir);
+
+      expect(finding.ok).toBe(false);
+      expect(finding.detail).toContain('alpha vs beta');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the skill checks at their boundaries', () => {
+  const skill = (description: string): string =>
+    ['---', `description: ${description}`, '---', '', 'body\n'].join('\n');
+  const withSkills = (files: Record<string, string>, assert: (dir: string) => void): void => {
+    const dir = scratchDir(files);
+    try {
+      assert(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it('passes a description landing exactly on the budget, and fails one character past it', () => {
+    // Tokens are chars/4 rounded up, so 1600 chars is exactly the budget. The boundary is
+    // the whole meaning of a ceiling: at it is fine, past it is not.
+    const exact = 'a'.repeat(SKILL_DESCRIPTION_BUDGET * 4);
+    withSkills({ 'verify-change/SKILL.md': skill(exact) }, (dir) => {
+      expect(skillDescriptionCost(dir)).toBe(SKILL_DESCRIPTION_BUDGET);
+      expect(skillBudgetCheck(dir).ok).toBe(true);
+    });
+    withSkills({ 'verify-change/SKILL.md': skill(`${exact}a`) }, (dir) => {
+      expect(skillBudgetCheck(dir).ok).toBe(false);
+    });
+  });
+
+  it('reports the always-on cost in the detail, since that is the number being watched', () => {
+    withSkills({ 'verify-change/SKILL.md': skill('four words go here') }, (dir) => {
+      expect(skillBudgetCheck(dir).detail).toBe(
+        `~5 always-on tokens (budget ${SKILL_DESCRIPTION_BUDGET})`,
+      );
+    });
+  });
+
+  it('trims a description before measuring or comparing it', () => {
+    expect(skillDescription(skill('  padded out   '))).toBe('padded out');
+  });
+
+  it('ignores a stray file sitting beside the skill directories', () => {
+    // Skills are directories holding SKILL.md. A README dropped in skills/ is not a skill,
+    // and counting it would report an orphan that cannot be fixed by writing a description.
+    withSkills(
+      { 'verify-change/SKILL.md': skill('a real one'), 'README.md': '# not a skill\n' },
+      (dir) => {
+        expect(skillsManifestCheck(dir).ok).toBe(true);
+      },
+    );
+  });
+
+  it('measures overlap against the narrower description, not the wider one', () => {
+    // A terse skill fully contained in a broader one is still ambiguous: everything the
+    // terse one claims, the broad one also claims. Comparing against the wider set would
+    // divide by the larger number and call that pair distinct.
+    withSkills(
+      {
+        'alpha/SKILL.md': skill('verify gates'),
+        'beta/SKILL.md': skill('verify gates before merging repository changes thoroughly'),
+      },
+      (dir) => {
+        expect(skillAmbiguityCheck(dir).ok).toBe(false);
+      },
+    );
+  });
+
+  it('counts only words long enough to carry meaning', () => {
+    // With a shorter cutoff these two collide on `abc` and `abd` alone, which are noise.
+    // The content words they actually claim — defg and hijk — have nothing in common.
+    withSkills(
+      { 'alpha/SKILL.md': skill('abc abd defg'), 'beta/SKILL.md': skill('abc abd hijk') },
+      (dir) => {
+        expect(skillAmbiguityCheck(dir).ok).toBe(true);
+      },
+    );
+  });
+
+  it('names the count of distinct skills when nothing collides', () => {
+    withSkills(
+      {
+        'alpha/SKILL.md': skill('rotate a leaked credential'),
+        'beta/SKILL.md': skill('render the project template'),
+      },
+      (dir) => {
+        expect(skillAmbiguityCheck(dir).detail).toBe('2 skill(s), each claiming distinct ground');
+      },
+    );
+  });
+
+  it('skips a skill with no description rather than colliding every pair on emptiness', () => {
+    // Two descriptionless skills share all zero of their words. Without the guard that is a
+    // division by zero, and NaN compares false, so the bug would hide rather than show.
+    withSkills(
+      { 'alpha/SKILL.md': '# no frontmatter\n', 'beta/SKILL.md': '# none either\n' },
+      (dir) => {
+        expect(skillAmbiguityCheck(dir).ok).toBe(true);
+      },
+    );
   });
 });
