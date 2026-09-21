@@ -1,0 +1,18 @@
+{
+  "note": "Quality numbers move one way. `tightest` is the strictest value each floor has ever been set to; harness-lint fails when the live config is looser than that. Loosening is still possible and sometimes necessary, but only through an explicit, dated override the owner approves — visible in the diff rather than buried in a config edit. `pnpm harness-lint --write` clicks a floor tighter; nothing clicks it back.",
+  "floors": {
+    "bundleTokens": {
+      "direction": "ceiling",
+      "tightest": 3900,
+      "source": "BUNDLE_TOKEN_BUDGET in harness-lint.ts",
+      "why": "A ceiling, so a HIGHER number is the loosening. It rose twice in three days, which is what prompted this file."
+    },
+    "mutationBreak": {
+      "direction": "floor",
+      "tightest": 87,
+      "source": "thresholds.break in stryker.config.json",
+      "why": "A floor, so a LOWER number is the loosening. This is the one an agent stuck on a red build has the clearest motive to touch."
+    }
+  },
+  "overrides": []
+}

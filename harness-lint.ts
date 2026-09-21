@@ -835,6 +835,122 @@ export const skillAmbiguityCheck = (skillsDir: string): Finding => {
   };
 };
 
+/** The committed record of how tight each quality number has ever been. */
+export const RATCHET_FILE = 'ratchet.json';
+
+export interface RatchetFloor {
+  /** `floor` means higher is stricter; `ceiling` means lower is stricter. */
+  direction: 'floor' | 'ceiling';
+  tightest: number;
+  source: string;
+  why?: string;
+}
+
+/**
+ * Deliberate permission to loosen one number. Every field is required: an override with no
+ * reason is indistinguishable from someone editing a config to get a red build green, which
+ * is the exact move this file exists to make visible.
+ */
+export interface RatchetOverride {
+  floor: string;
+  to: number;
+  date: string;
+  reason: string;
+  approvedBy: string;
+}
+
+export interface RatchetFile {
+  note?: string;
+  floors: Record<string, RatchetFloor>;
+  overrides: RatchetOverride[];
+}
+
+export const readRatchet = (athenaRoot: string): RatchetFile => {
+  const parsed = JSON.parse(readFileSync(join(athenaRoot, RATCHET_FILE), 'utf8')) as RatchetFile;
+  if (parsed.floors === undefined || parsed.overrides === undefined) {
+    throw new Error(`${RATCHET_FILE} needs both "floors" and "overrides"`);
+  }
+  return parsed;
+};
+
+/** True when `value` is at least as strict as `tightest`, given which way the number runs. */
+export const isAtLeastAsTight = (floor: RatchetFloor, value: number): boolean =>
+  floor.direction === 'ceiling' ? value <= floor.tightest : value >= floor.tightest;
+
+/** The live value of each ratcheted number, read from the config that actually enforces it. */
+export const liveFloors = (athenaRoot: string): Record<string, number> => {
+  const stryker = JSON.parse(readFileSync(join(athenaRoot, 'stryker.config.json'), 'utf8')) as {
+    thresholds?: { break?: number };
+  };
+  return {
+    bundleTokens: BUNDLE_TOKEN_BUDGET,
+    mutationBreak: stryker.thresholds?.break ?? Number.NaN,
+  };
+};
+
+/**
+ * One finding per ratcheted number. A loosening is not forbidden — sometimes a floor was set
+ * on a lucky measurement and has to come down — but it cannot happen quietly. The override
+ * has to name the exact value, carry a date, a reason and an approver, and it lands in the
+ * diff where a reviewer sees it.
+ *
+ * Matching on the exact value is what stops an override becoming a standing exemption: move
+ * the number again and the old permission no longer covers it.
+ */
+export const ratchetChecks = (ratchet: RatchetFile, live: Record<string, number>): Finding[] =>
+  Object.entries(ratchet.floors).map(([name, floor]) => {
+    const value = live[name];
+    if (value === undefined || Number.isNaN(value)) {
+      return { name: `ratchet ${name}`, ok: false, detail: `cannot read ${floor.source}` };
+    }
+    if (isAtLeastAsTight(floor, value)) {
+      const moved = value !== floor.tightest;
+      return {
+        name: `ratchet ${name}`,
+        ok: true,
+        detail: moved
+          ? `${value} is tighter than the recorded ${floor.tightest} — run --write to click it`
+          : `${value} holds at its tightest`,
+      };
+    }
+    const override = ratchet.overrides.find(
+      (entry) =>
+        entry.floor === name &&
+        entry.to === value &&
+        entry.reason !== '' &&
+        entry.approvedBy !== '',
+    );
+    if (override) {
+      return {
+        name: `ratchet ${name}`,
+        ok: true,
+        detail: `loosened ${floor.tightest} -> ${value} by override (${override.date}, ${override.approvedBy}): ${override.reason}`,
+      };
+    }
+    return {
+      name: `ratchet ${name}`,
+      ok: false,
+      detail: `${value} is looser than the recorded ${floor.tightest} with no approved override — add one to ${RATCHET_FILE} or restore the value`,
+    };
+  });
+
+/**
+ * The record after a run: each floor clicks to the live value when that is tighter, never the
+ * other way. Pure, so `--write` is the only thing that touches disk.
+ */
+export const tightenedRatchet = (
+  ratchet: RatchetFile,
+  live: Record<string, number>,
+): RatchetFile => {
+  const floors: Record<string, RatchetFloor> = {};
+  for (const [name, floor] of Object.entries(ratchet.floors)) {
+    const value = live[name];
+    const tighter = value !== undefined && !Number.isNaN(value) && isAtLeastAsTight(floor, value);
+    floors[name] = tighter ? { ...floor, tightest: value } : floor;
+  }
+  return { ...ratchet, floors };
+};
+
 /** Lines a command shares with an instruction layer: not waste, but they drift in pairs. */
 export const commandEchoes = (instructionsDir: string, commandsDir: string): Echo[] => {
   const byLine = new Map<string, string[]>();
@@ -1053,6 +1169,7 @@ export const harnessLint = (
       skillAmbiguityCheck(resolvedSkillsDir),
       ...hooksWiredCheck(permissionsDir),
       ...codexSecretsCheck(permissionsDir),
+      ...ratchetChecks(readRatchet(athenaRoot), liveFloors(athenaRoot)),
       scorecardCheck(dirname(resolvedCommandsDir), scorecard),
     ],
     costs,
@@ -1065,6 +1182,13 @@ export const harnessLint = (
 };
 
 /** Write the measured scorecard. The only thing in this module that touches the disk. */
+/** Persist the clicked ratchet. Paired with `tightenedRatchet`, which is where the rule lives. */
+export const writeRatchet = (athenaRoot: string, ratchet: RatchetFile): string => {
+  const path = join(athenaRoot, RATCHET_FILE);
+  writeFileSync(path, `${JSON.stringify(ratchet, null, 2)}\n`);
+  return path;
+};
+
 export const writeScorecard = (athenaRoot: string, scorecard: Scorecard): string => {
   const path = join(athenaRoot, SCORECARD_FILE);
   writeFileSync(path, serializeScorecard(scorecard));
@@ -1128,6 +1252,14 @@ export const main = (): void => {
       : null;
   if (written !== null) {
     console.log(`wrote ${written}\n`);
+    // The ratchet clicks in the same breath, and only ever tighter. There is deliberately no
+    // flag that loosens it: that path is an override entry someone writes and the owner
+    // approves, so it arrives as a reviewable diff rather than a command anyone can run.
+    const clicked = writeRatchet(
+      athenaDir,
+      tightenedRatchet(readRatchet(athenaDir), liveFloors(athenaDir)),
+    );
+    console.log(`wrote ${clicked}\n`);
   }
   // Re-measure after a write so the printed report and the exit code describe the file that
   // is now on disk, and a real failure still fails the run.
