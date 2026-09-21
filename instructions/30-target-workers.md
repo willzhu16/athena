@@ -4,10 +4,10 @@ For repos deploying to Cloudflare Workers/Pages. Loaded in addition to the stack
 
 ## Runtime reality
 
-- **The Workers runtime is not Node.** Do not use Node built-ins (`fs`, `path`, `net`,
-  `child_process`, `process.env`) in request-path code. Use Web-standard APIs (`fetch`,
-  `URL`, `crypto.subtle`, `Request`/`Response`) and Workers bindings. `nodejs_compat` is
-  opt-in per binding, not a default to assume.
+- **The Workers runtime is not Node.** Biome rejects Node built-ins and `process.env` under
+  `src/`; use Web-standard APIs (`fetch`, `URL`, `crypto.subtle`, `Request`/`Response`) and
+  bindings instead of working around it. `nodejs_compat` ships on for Sentry, so such an
+  import can resolve at runtime and still be wrong — the lint rule is the signal, not the build.
 - CPU time per request is bounded (free tier). Keep handlers lean; no long-running loops,
   no synchronous heavy work. Long-running compute is out of scope for Workers (D-07).
 

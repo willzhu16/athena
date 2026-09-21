@@ -58,10 +58,25 @@ decide; the human remains the final merge gate.
 
 ```
 ## Session log
-Tool/model: … | Packet: #NN
-Tried: … | Dead ends: … | Decisions made and why: …
+Tool/model: <tool>/<model>
+Packet: #<issue>, or none
+Plan: before-first-edit | mid-task | none
+Gates: <the gates you actually ran>
+Retries: <N> gate failures before green
+Abstained: no, or yes — <what you stopped and asked about>
+Tried: <the approach that worked, in one line>
+Dead ends: <what was attempted and abandoned, and why — this is the valuable part>
+Decisions and why: <choices not spelled out in the packet, with the reason>
 ```
 
 This is the audit trail (ARCHITECTURE §6.6) and the input to improving the instruction
 layers: recurring mistakes become new lint/CI rules (preferred) or instruction lines
 (fallback) at the monthly session-log harvest (spec 05 cadence).
+
+The first six fields are enumerated so the harvest can tally them instead of reading every
+PR by hand, which is why it kept not happening. `Plan`, `Retries` and `Abstained` are the
+three a reviewer cannot reconstruct from the diff: whether a plan preceded the first edit,
+how many times a gate went red, and whether the agent stopped and asked rather than guessed.
+Platform's `scripts/session-log.sh` validates a block and rejects an unfilled `<placeholder>`;
+the [template](https://github.com/willzhu16/platform/blob/v1/handbook/templates/session-log.md)
+carries a worked example that platform's own CI checks.

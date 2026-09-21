@@ -77,10 +77,10 @@ gets no such net: run the same gate yourself before you claim anything.
 
 ## Honesty
 
-- Report failures plainly. Never claim something works that you have not run.
-- Ground every progress claim in a tool result from this session. If a step was skipped
-  or a test failed, say so — with the output.
-- "It compiles" is not verification. "Done" without having run something is not done.
+- Report failures plainly, with the output. Ground every progress claim in a tool result from
+  this session; if a step was skipped or a test failed, say so.
+- "It compiles" is not verification. The gate hook holds that line at turn end; between turns
+  it is yours to hold.
 
 ## Commits and attribution
 
@@ -101,14 +101,11 @@ Full [review protocol](https://github.com/willzhu16/athena/blob/v1/review-protoc
 
 ## Session log
 
-Every meaningful agent session ends by appending this block to the PR description — it is
-the audit trail and the input to improving these layers:
-
-```
-## Session log
-Tool/model: … | Packet: #NN
-Tried: … | Dead ends: … | Decisions made and why: …
-```
+Every agent session ends by appending a session-log block to the PR description: the audit
+trail, and the input to improving these layers. Nine fields, one per line, six of them
+enumerated so the monthly harvest can count them. Copy the block and a filled example from the
+[session-log template](https://github.com/willzhu16/platform/blob/v1/handbook/templates/session-log.md);
+`scripts/session-log.sh` validates one and rejects a `<placeholder>` left unfilled.
 
 ## Changing these instructions
 
