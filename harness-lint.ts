@@ -838,6 +838,9 @@ export const skillAmbiguityCheck = (skillsDir: string): Finding => {
 /** The committed record of how tight each quality number has ever been. */
 export const RATCHET_FILE = 'ratchet.json';
 
+/** Shared by vitest and the ratchet, so the enforced number and the recorded one are one value. */
+export const COVERAGE_THRESHOLDS_FILE = 'coverage-thresholds.json';
+
 export interface RatchetFloor {
   /** `floor` means higher is stricter; `ceiling` means lower is stricter. */
   direction: 'floor' | 'ceiling';
@@ -879,12 +882,28 @@ export const isAtLeastAsTight = (floor: RatchetFloor, value: number): boolean =>
 
 /** The live value of each ratcheted number, read from the config that actually enforces it. */
 export const liveFloors = (athenaRoot: string): Record<string, number> => {
-  const stryker = JSON.parse(readFileSync(join(athenaRoot, 'stryker.config.json'), 'utf8')) as {
-    thresholds?: { break?: number };
+  /**
+   * A config that will not parse yields no numbers rather than an exception. `ratchetChecks`
+   * already reports an unreadable floor as a failure, and that branch is the honest outcome:
+   * throwing here would take the whole report down, hiding every other finding behind one
+   * missing file. Same rule doctor follows — report, never crash.
+   */
+  const readConfig = (name: string): Record<string, unknown> => {
+    try {
+      return JSON.parse(readFileSync(join(athenaRoot, name), 'utf8')) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
   };
+  const stryker = readConfig('stryker.config.json') as { thresholds?: { break?: number } };
+  const coverage = readConfig(COVERAGE_THRESHOLDS_FILE) as Record<string, number>;
   return {
     bundleTokens: BUNDLE_TOKEN_BUDGET,
     mutationBreak: stryker.thresholds?.break ?? Number.NaN,
+    coverageLines: coverage.lines ?? Number.NaN,
+    coverageFunctions: coverage.functions ?? Number.NaN,
+    coverageStatements: coverage.statements ?? Number.NaN,
+    coverageBranches: coverage.branches ?? Number.NaN,
   };
 };
 

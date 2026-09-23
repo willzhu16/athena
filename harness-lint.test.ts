@@ -1519,14 +1519,35 @@ describe('quality numbers move one way', () => {
     expect(loosened.floors.mutationBreak?.tightest).toBe(87);
   });
 
-  it('reads the shipped record and finds both floors live', () => {
+  it('finds a live value for every floor the shipped record tracks', () => {
+    // Derived from the record rather than listing floor names: a recorded floor with no live
+    // value is one nothing enforces, which is the failure worth catching, and hardcoding the
+    // list here would just break each time a number is ratcheted.
     const shipped = readRatchet(athenaDir);
     const live = liveFloors(athenaDir);
 
-    expect(Object.keys(shipped.floors).sort()).toEqual(['bundleTokens', 'mutationBreak']);
+    expect(Object.keys(shipped.floors).length).toBeGreaterThan(0);
+    for (const name of Object.keys(shipped.floors)) {
+      expect(Number.isNaN(live[name] ?? Number.NaN)).toBe(false);
+    }
     expect(live.bundleTokens).toBe(BUNDLE_TOKEN_BUDGET);
-    expect(Number.isNaN(live.mutationBreak)).toBe(false);
     expect(ratchetChecks(shipped, live).every((finding) => finding.ok)).toBe(true);
+  });
+
+  it('reports an unreadable config as a failed floor instead of throwing', () => {
+    // Regression: liveFloors read its configs directly, so pointing the ratchet at a root
+    // without them took the whole report down — hiding every other finding behind one
+    // missing file, when ratchetChecks already had a "cannot read" branch to report it.
+    const dir = scratchDir({ 'ratchet.json': JSON.stringify({ floors: {}, overrides: [] }) });
+    try {
+      const live = liveFloors(dir);
+
+      expect(Number.isNaN(live.mutationBreak)).toBe(true);
+      expect(Number.isNaN(live.coverageBranches)).toBe(true);
+      expect(live.bundleTokens).toBe(BUNDLE_TOKEN_BUDGET);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('rejects a record missing its halves rather than treating it as empty', () => {
@@ -1550,6 +1571,12 @@ describe('what --write puts on disk', () => {
         overrides: [],
       }),
       'stryker.config.json': JSON.stringify({ thresholds: { break: live } }),
+      'coverage-thresholds.json': JSON.stringify({
+        lines: 95,
+        functions: 95,
+        statements: 95,
+        branches: 93,
+      }),
     });
 
   const scorecardOf = (root: string) =>
