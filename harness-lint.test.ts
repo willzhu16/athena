@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
+import { SKILLS } from './compile.ts';
 import {
   type AcknowledgedDeny,
   anyFailed,
@@ -1192,17 +1193,25 @@ describe('shipped skills', () => {
   const skill = (description: string, body = 'do the thing\n'): string =>
     ['---', `description: ${description}`, '---', '', body].join('\n');
 
+  /**
+   * Every skill SKILLS lists, as scratch files. Derived from the manifest rather than named
+   * literally, because a test that hardcodes how many skills exist breaks each time one is
+   * added — which teaches people to edit tests instead of reading them.
+   */
+  const everySkill = (): Record<string, string> =>
+    Object.fromEntries(SKILLS.map((name) => [`${name}/SKILL.md`, skill(`what ${name} covers`)]));
+
   it('accepts a skills directory holding exactly what SKILLS lists', () => {
     const finding = skillsManifestCheck(athenaSkills);
 
     expect(finding.ok).toBe(true);
-    expect(finding.detail).toBe('1 skill(s), all present');
+    expect(finding.detail).toBe(`${SKILLS.length} skill(s), all present`);
   });
 
   it('reports a skill directory no manifest entry ships', () => {
     const dir = scratchDir({
-      'verify-change/SKILL.md': skill('a'),
-      'orphan/SKILL.md': skill('b'),
+      ...everySkill(),
+      'orphan/SKILL.md': skill('an extra nobody lists'),
     });
     try {
       expect(skillsManifestCheck(dir).detail).toBe('on disk but not in SKILLS: orphan');
@@ -1217,7 +1226,11 @@ describe('shipped skills', () => {
       const finding = skillsManifestCheck(dir);
 
       expect(finding.ok).toBe(false);
-      expect(finding.detail).toContain('in SKILLS but not on disk: verify-change');
+      // Every listed skill has to be named, not just the first: a report that stops at one
+      // sends someone round the loop again for each of the others.
+      for (const name of SKILLS) {
+        expect(finding.detail).toContain(name);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1346,7 +1359,10 @@ describe('the skill checks at their boundaries', () => {
     // Skills are directories holding SKILL.md. A README dropped in skills/ is not a skill,
     // and counting it would report an orphan that cannot be fixed by writing a description.
     withSkills(
-      { 'verify-change/SKILL.md': skill('a real one'), 'README.md': '# not a skill\n' },
+      {
+        ...Object.fromEntries(SKILLS.map((name) => [`${name}/SKILL.md`, skill(`covers ${name}`)])),
+        'README.md': '# not a skill\n',
+      },
       (dir) => {
         expect(skillsManifestCheck(dir).ok).toBe(true);
       },

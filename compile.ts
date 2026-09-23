@@ -105,7 +105,7 @@ export const HOOKS = ['gate.mjs'] as const;
  * body nobody routes to might as well not ship. harness-lint prices and polices descriptions
  * for exactly that reason.
  */
-export const SKILLS = ['verify-change'] as const;
+export const SKILLS = ['review-protocol', 'verify-change', 'write-a-packet'] as const;
 
 /** Validate untrusted JSON before either CLI reads fields or constructs layer paths. */
 export function validateConfig(value: unknown): asserts value is AthenaConfig {
