@@ -11,6 +11,7 @@ import {
   type BundleCost,
   bashCommand,
   budgetCheck,
+  buildScorecard,
   bundleCosts,
   COHERENCE_FILE,
   type CoherenceClaim,
@@ -30,12 +31,20 @@ import {
   harnessLint,
   hooksManifestCheck,
   hooksWiredCheck,
+  isAtLeastAsTight,
   isOrderSensitive,
+  liveFloors,
   main,
   normalizeLine,
   printReport,
+  RATCHET_FILE,
+  type RatchetFile,
+  type RatchetFloor,
+  type RatchetOverride,
+  ratchetChecks,
   readCoherence,
   readProfile,
+  readRatchet,
   SCORECARD_FILE,
   SKILL_DESCRIPTION_BUDGET,
   scorecardCheck,
@@ -46,7 +55,9 @@ import {
   skillDescriptionCost,
   skillFrontmatterChecks,
   skillsManifestCheck,
+  tightenedRatchet,
   unsoundDenies,
+  writeHarnessArtifacts,
   writeScorecard,
 } from './harness-lint.ts';
 
@@ -1416,5 +1427,193 @@ describe('the skill checks at their boundaries', () => {
         expect(skillAmbiguityCheck(dir).ok).toBe(true);
       },
     );
+  });
+});
+
+describe('quality numbers move one way', () => {
+  const ceiling: RatchetFloor = { direction: 'ceiling', tightest: 3900, source: 'a constant' };
+  const floor: RatchetFloor = { direction: 'floor', tightest: 87, source: 'a config' };
+  const ratchet = (overrides: RatchetOverride[] = []): RatchetFile => ({
+    floors: { bundleTokens: ceiling, mutationBreak: floor },
+    overrides,
+  });
+  const approved = (to: number): RatchetOverride => ({
+    floor: 'mutationBreak',
+    to,
+    date: '2026-09-21',
+    reason: 'the floor was set on a lucky run',
+    approvedBy: 'owner',
+  });
+  const verdict = (live: Record<string, number>, overrides: RatchetOverride[] = []): string => {
+    const finding = ratchetChecks(ratchet(overrides), live).find(
+      (entry) => entry.name === 'ratchet mutationBreak',
+    );
+    return finding?.ok ? 'ok' : (finding?.detail ?? 'missing');
+  };
+
+  it('knows which way each kind of number runs', () => {
+    // A ceiling and a floor tighten in opposite directions, and getting this backwards would
+    // turn the whole check into permission to loosen.
+    expect(isAtLeastAsTight(ceiling, 3899)).toBe(true);
+    expect(isAtLeastAsTight(ceiling, 3901)).toBe(false);
+    expect(isAtLeastAsTight(floor, 88)).toBe(true);
+    expect(isAtLeastAsTight(floor, 86)).toBe(false);
+  });
+
+  it('treats the recorded value itself as tight enough', () => {
+    expect(isAtLeastAsTight(ceiling, 3900)).toBe(true);
+    expect(isAtLeastAsTight(floor, 87)).toBe(true);
+    expect(verdict({ bundleTokens: 3900, mutationBreak: 87 })).toBe('ok');
+  });
+
+  it('fails a loosening with no override, naming both numbers', () => {
+    // The failure the whole file exists for: an agent on a red build lowering the floor.
+    expect(verdict({ bundleTokens: 3900, mutationBreak: 70 })).toContain(
+      '70 is looser than the recorded 87',
+    );
+  });
+
+  it('allows a loosening the owner approved, and says who and why in the report', () => {
+    const findings = ratchetChecks(ratchet([approved(70)]), {
+      bundleTokens: 3900,
+      mutationBreak: 70,
+    });
+    const finding = findings.find((entry) => entry.name === 'ratchet mutationBreak');
+
+    expect(finding?.ok).toBe(true);
+    expect(finding?.detail).toContain('by override (2026-09-21, owner)');
+    expect(finding?.detail).toContain('lucky run');
+  });
+
+  it('does not let one override become a standing exemption', () => {
+    // Approved at 70, then moved to 65. Matching the exact value is what keeps permission
+    // attached to the decision that was made rather than to the floor in general.
+    expect(verdict({ bundleTokens: 3900, mutationBreak: 65 }, [approved(70)])).toContain(
+      'no approved override',
+    );
+  });
+
+  it.each([
+    ['no reason', { ...approved(70), reason: '' }],
+    ['no approver', { ...approved(70), approvedBy: '' }],
+  ])('rejects an override with %s', (_case, override) => {
+    // An override with no reason is indistinguishable from someone editing a config to get
+    // a red build green, which is the move being made visible.
+    expect(verdict({ bundleTokens: 3900, mutationBreak: 70 }, [override])).toContain(
+      'no approved override',
+    );
+  });
+
+  it('reports a floor it cannot read rather than passing it', () => {
+    expect(verdict({ bundleTokens: 3900, mutationBreak: Number.NaN })).toContain('cannot read');
+  });
+
+  it('suggests clicking when the live value is tighter than the record', () => {
+    const findings = ratchetChecks(ratchet(), { bundleTokens: 3900, mutationBreak: 91 });
+    const finding = findings.find((entry) => entry.name === 'ratchet mutationBreak');
+
+    expect(finding?.ok).toBe(true);
+    expect(finding?.detail).toContain('tighter than the recorded 87');
+  });
+
+  it('clicks a floor tighter and never back', () => {
+    const tightened = tightenedRatchet(ratchet(), { bundleTokens: 3850, mutationBreak: 91 });
+
+    expect(tightened.floors.bundleTokens?.tightest).toBe(3850);
+    expect(tightened.floors.mutationBreak?.tightest).toBe(91);
+  });
+
+  it('leaves the record alone when the live value is looser, override or not', () => {
+    // --write must never be a way to launder a loosening into the record. The override path
+    // is a reviewed diff; this one is a command anybody can run.
+    const loosened = tightenedRatchet(ratchet([approved(70)]), {
+      bundleTokens: 4200,
+      mutationBreak: 70,
+    });
+
+    expect(loosened.floors.bundleTokens?.tightest).toBe(3900);
+    expect(loosened.floors.mutationBreak?.tightest).toBe(87);
+  });
+
+  it('reads the shipped record and finds both floors live', () => {
+    const shipped = readRatchet(athenaDir);
+    const live = liveFloors(athenaDir);
+
+    expect(Object.keys(shipped.floors).sort()).toEqual(['bundleTokens', 'mutationBreak']);
+    expect(live.bundleTokens).toBe(BUNDLE_TOKEN_BUDGET);
+    expect(Number.isNaN(live.mutationBreak)).toBe(false);
+    expect(ratchetChecks(shipped, live).every((finding) => finding.ok)).toBe(true);
+  });
+
+  it('rejects a record missing its halves rather than treating it as empty', () => {
+    const dir = scratchDir({ 'ratchet.json': JSON.stringify({ floors: {} }) });
+    try {
+      expect(() => readRatchet(dir)).toThrow('needs both');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('what --write puts on disk', () => {
+  /** A scratch athena root carrying just the two files the write path reads and rewrites. */
+  const scratchRoot = (tightest: number, live: number): string =>
+    scratchDir({
+      'ratchet.json': JSON.stringify({
+        floors: {
+          mutationBreak: { direction: 'floor', tightest, source: 'stryker.config.json' },
+        },
+        overrides: [],
+      }),
+      'stryker.config.json': JSON.stringify({ thresholds: { break: live } }),
+    });
+
+  const scorecardOf = (root: string) =>
+    buildScorecard(
+      bundleCosts(instructionsDir),
+      [],
+      { claims: [], acknowledgedUnsoundDenies: [] },
+      [],
+      [],
+      [],
+      join(root, 'skills'),
+    );
+
+  it('writes both the scorecard and the ratchet, naming each', () => {
+    const root = scratchRoot(87, 87);
+    try {
+      const written = writeHarnessArtifacts(root, scorecardOf(root));
+
+      expect(written).toHaveLength(2);
+      expect(written.some((path) => path.endsWith(SCORECARD_FILE))).toBe(true);
+      expect(written.some((path) => path.endsWith(RATCHET_FILE))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('clicks a floor tighter when the live value has improved', () => {
+    const root = scratchRoot(87, 91);
+    try {
+      writeHarnessArtifacts(root, scorecardOf(root));
+
+      expect(readRatchet(root).floors.mutationBreak?.tightest).toBe(91);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to launder a loosening into the record', () => {
+    // The rule that makes this a ratchet rather than a log. --write is a command anyone can
+    // run, so if it recorded a lowered floor the override path would be pointless: loosen,
+    // regenerate, and the diff would show a routine scorecard update.
+    const root = scratchRoot(87, 70);
+    try {
+      writeHarnessArtifacts(root, scorecardOf(root));
+
+      expect(readRatchet(root).floors.mutationBreak?.tightest).toBe(87);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

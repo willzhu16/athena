@@ -57,6 +57,18 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   needs frontmatter carrying a description, no command repeats a line, and a same-named
   process doc at the repo root must reference `commands/<name>.md` — the mechanical version
   of conductor.md's "keep the two in step".
+- **`ratchet.json` makes the quality numbers one-way.** `harness-lint` reads the LIVE value
+  of each floor from the config that enforces it (`BUNDLE_TOKEN_BUDGET`, stryker's
+  `thresholds.break`) and fails when it is looser than the tightest value ever recorded.
+  Direction matters and is stored per floor: the bundle budget is a **ceiling**, so a higher
+  number is the loosening; the mutation score is a **floor**, so a lower one is.
+  - **Loosening is still possible, and that is deliberate.** A floor set on a lucky
+    measurement sometimes has to come down. It needs an entry in `overrides` naming the
+    exact value, with a date, a reason and an approver — so it arrives as a reviewed diff
+    rather than a quiet config edit. The exact-value match is what stops one override
+    becoming a standing exemption: move the number again and the old permission lapses.
+  - `--write` clicks a floor **tighter only**. There is no flag that loosens one, because a
+    command anyone can run is exactly the wrong shape for that decision.
 - **`harness-scorecard.json` is committed and verified, not merely printed.** `pnpm
   harness-lint` FAILs when it is stale; `pnpm harness-lint --write` regenerates it. It holds
   bundle cost per config, command cost, and coverage counts, so a change in any of them lands
