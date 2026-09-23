@@ -56,6 +56,7 @@ import {
   skillFrontmatterChecks,
   skillsManifestCheck,
   tightenedRatchet,
+  unclaimedDenies,
   unsoundDenies,
   writeHarnessArtifacts,
   writeScorecard,
@@ -1615,5 +1616,139 @@ describe('what --write puts on disk', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('a profile that is missing or unreadable (reporting, not crashing)', () => {
+  /** A permissions directory wired correctly, then broken in one specific way. */
+  const tiersWiringTo = (commands: string[]): Record<string, string> =>
+    Object.fromEntries(
+      ['t0', 't1', 't2'].map((tier) => [
+        `${tier}.settings.json`,
+        JSON.stringify({
+          permissions: { allow: [], deny: [] },
+          hooks: {
+            Stop: [{ hooks: commands.map((command) => ({ type: 'command', command })) }],
+          },
+        }),
+      ]),
+    );
+
+  it('reports a tier with no profile on disk rather than throwing', () => {
+    // Every other check that reads a profile — denyState, unclaimedDenies, codexSecretsCheck
+    // — already degrades to a finding. This one threw, so one absent file aborted the whole
+    // report and hid every other problem behind a stack trace.
+    const files = tiersWiringTo(['bash /repo/.claude/hooks/gate.mjs']);
+    delete files['t2.settings.json'];
+    const dir = scratchDir(files);
+    try {
+      const findings = hooksWiredCheck(dir);
+
+      expect(findings.map((finding) => finding.name)).toEqual([
+        'hooks wired t0',
+        'hooks wired t1',
+        'hooks wired t2',
+      ]);
+      expect(findings[2].ok).toBe(false);
+      expect(findings[2].detail).toBe('no profile on disk for t2');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a profile that is not valid JSON rather than throwing', () => {
+    const dir = scratchDir({
+      ...tiersWiringTo(['bash /repo/.claude/hooks/gate.mjs']),
+      't0.settings.json': '{ truncated',
+    });
+    try {
+      const findings = hooksWiredCheck(dir);
+
+      expect(findings[0].ok).toBe(false);
+      expect(findings[0].detail).toContain('cannot read t0.settings.json');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still returns a full report when one tier profile is gone', () => {
+    // The point of the guard: `pnpm harness-lint` must print every other finding, the way
+    // doctor does, instead of dying on the first unreadable file.
+    const dir = scratchDir({
+      [COHERENCE_FILE]: JSON.stringify({ claims: [], acknowledgedUnsoundDenies: [] }),
+    });
+    try {
+      // An empty claims list is itself rejected by readCoherence, so use the real manifest
+      // directory and hide only the profile, which is what a bad sync actually looks like.
+      const broken = scratchDir({
+        [COHERENCE_FILE]: readFileSync(join(permissionsDir, COHERENCE_FILE), 'utf8'),
+        't0.settings.json': readFileSync(join(permissionsDir, 't0.settings.json'), 'utf8'),
+        't1.settings.json': readFileSync(join(permissionsDir, 't1.settings.json'), 'utf8'),
+      });
+      try {
+        const report = harnessLint(instructionsDir, broken);
+
+        expect(report.findings.length).toBeGreaterThan(1);
+        expect(report.findings.some((finding) => finding.name === 'hooks wired t2')).toBe(true);
+      } finally {
+        rmSync(broken, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('deny rules no layer explains', () => {
+  const claim = (command: string): CoherenceClaim => ({
+    command,
+    statedIn: ['10-security.md'],
+    enforcement: 'denied',
+    deniedIn: ['t1'],
+  });
+
+  it('counts a rule whose command merely starts with a claimed one as unexplained', () => {
+    // `git push` must not read as explaining `git pushall`: they are different commands,
+    // and denyState already refuses that conflation. Counting it as claimed hides a wall
+    // no layer describes, which is the whole failure this list exists to surface.
+    const dir = scratchDir({
+      't1.settings.json': profile(['Bash(git pushall:*)']),
+    });
+    try {
+      expect(unclaimedDenies(dir, [claim('git push')])).toEqual(['Bash(git pushall:*)']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('treats the exact command and a subcommand of it as explained', () => {
+    const dir = scratchDir({
+      't1.settings.json': profile(['Bash(git push:*)', 'Bash(git push --force:*)']),
+    });
+    try {
+      expect(unclaimedDenies(dir, [claim('git push')])).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('rule and frontmatter parsing edges', () => {
+  it('reads the command out of an exact Bash rule that carries no :* suffix', () => {
+    // Both spellings ship: `Bash(pnpm test)` is exact, `Bash(sops -d:*)` is a prefix. A
+    // parser that only understood the prefix form would silently stop auditing every exact
+    // rule — they would read as non-Bash rules and drop out of the soundness check.
+    expect(bashCommand('Bash(pnpm test)')).toBe('pnpm test');
+    expect(bashCommand('Bash(sops -d:*)')).toBe('sops -d');
+  });
+
+  it('ignores a --- rule that is not the frontmatter block', () => {
+    // A skill whose body uses a horizontal rule but never opens with frontmatter has no
+    // description, so Claude Code never routes to it. Reading the later --- as frontmatter
+    // would report that unreachable skill as described.
+    expect(skillDescription('# A skill\n\nsome prose\n\n---\ndescription: too late\n---\n')).toBe(
+      null,
+    );
+    expect(skillDescription('---\ndescription: routed\n---\n\nbody\n')).toBe('routed');
   });
 });

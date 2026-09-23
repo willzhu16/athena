@@ -365,6 +365,15 @@ const statesCommand = (instructionsDir: string, layer: string, command: string):
  * Whether a tier blocks a command. A claim naming a tier with no profile on disk reports
  * as `missing` rather than throwing — like doctor, this tool reports and never crashes.
  */
+/**
+ * True when a broader command covers a more specific one. The trailing space is
+ * load-bearing: without it `git push` reads as covering `git pushall`, which is a different
+ * command entirely. Shared by the two places that ask this question so they cannot answer
+ * it differently.
+ */
+const covers = (broader: string, command: string): boolean =>
+  command === broader || command.startsWith(`${broader} `);
+
 const denyState = (
   permissionsDir: string,
   tier: string,
@@ -382,7 +391,7 @@ const denyState = (
   const denied = profile.permissions.deny.some((rule) => {
     if (rule === 'Bash' || rule === 'Bash(*)') return true;
     const prefix = rule.match(/^Bash\(([^*]+?)(?::\*| \*)\)$/)?.[1];
-    return prefix !== undefined && (command === prefix || command.startsWith(`${prefix} `));
+    return prefix !== undefined && covers(prefix, command);
   });
   return denied ? 'denied' : 'open';
 };
@@ -460,7 +469,7 @@ export const unclaimedDenies = (permissionsDir: string, claims: CoherenceClaim[]
   }
   return profile.permissions.deny.filter((rule) => {
     const command = bashCommand(rule);
-    return command !== null && !claims.some((claim) => command.startsWith(claim.command));
+    return command !== null && !claims.some((claim) => covers(claim.command, command));
   });
 };
 
@@ -691,12 +700,30 @@ const configuredHookCommands = (profile: PermissionProfile): string[] =>
  */
 export const hooksWiredCheck = (permissionsDir: string): Finding[] =>
   (KNOWN_TIERS as readonly number[]).map((tier) => {
-    const commands = configuredHookCommands(readProfile(permissionsDir, `t${tier}`));
+    const name = `hooks wired t${tier}`;
+    const file = settingsProfileFor(tier);
+    let profile: PermissionProfile;
+    try {
+      profile = readProfile(permissionsDir, `t${tier}`);
+    } catch (error) {
+      // Report rather than throw, like every other profile reader here. An absent or
+      // truncated file used to abort harnessLint mid-run, so one bad sync replaced the whole
+      // report with a stack trace and hid every other finding behind it.
+      const missing = !existsSync(join(permissionsDir, file));
+      return {
+        name,
+        ok: false,
+        detail: missing
+          ? `no profile on disk for t${tier}`
+          : `cannot read ${file}: ${(error as Error).message}`,
+      };
+    }
+    const commands = configuredHookCommands(profile);
     const unreferenced = [...HOOKS].filter(
       (hook) => !commands.some((command) => command.includes(`.claude/hooks/${hook}`)),
     );
     return {
-      name: `hooks wired t${tier}`,
+      name,
       ok: unreferenced.length === 0,
       detail:
         unreferenced.length === 0

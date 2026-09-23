@@ -37,6 +37,20 @@ const readProjectLayer = (projectDir: string): string => {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
 };
 
+/**
+ * Read a file athena installed, or null when the path exists but cannot be read — a
+ * directory left where the file belongs, a permission problem. `existsSync` says a path is
+ * there, not that it yields bytes, and doctor reports rather than crashing: one unreadable
+ * file must not replace the whole report with a stack trace.
+ */
+const readInstalled = (path: string): string | null => {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+};
+
 const presenceCheck = (projectDir: string, file: string): Check => {
   const ok = existsSync(join(projectDir, file));
   return { name: file, ok, detail: ok ? 'present' : 'missing' };
@@ -112,7 +126,10 @@ const verbatimCheck = (
       detail: `cannot read expected source ${label}: ${(error as Error).message}`,
     };
   }
-  const actual = readFileSync(path, 'utf8');
+  const actual = readInstalled(path);
+  if (actual === null) {
+    return { name: relativePath, ok: false, detail: `cannot read ${relativePath}` };
+  }
   if (actual === expected) {
     return { name: relativePath, ok: true, detail: `matches ${label}` };
   }
@@ -139,7 +156,10 @@ const freshnessCheck = (projectDir: string, file: string, expectedHash: string):
   if (!existsSync(path)) {
     return { name: file, ok: false, detail: 'missing — run `athena compile`' };
   }
-  const content = readFileSync(path, 'utf8');
+  const content = readInstalled(path);
+  if (content === null) {
+    return { name: file, ok: false, detail: `cannot read ${file}` };
+  }
   const actual = computeHash(extractBody(content));
   const ok = isFresh(content, expectedHash);
   return {
