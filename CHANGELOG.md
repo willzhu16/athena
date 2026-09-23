@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/willzhu16/athena/compare/v1.7.0...v1.8.0) (2026-09-23)
+
+
+### Features
+
+* **harness:** make the quality numbers move one way ([#27](https://github.com/willzhu16/athena/issues/27)) ([53b71a8](https://github.com/willzhu16/athena/commit/53b71a86d3093e60097360081edce58e7554b62c))
+* **skills:** ship the review protocol and packet format on demand ([#28](https://github.com/willzhu16/athena/issues/28)) ([020a0a7](https://github.com/willzhu16/athena/commit/020a0a706f931afa6459a8bce55102d3a159c4f7))
+
 ## [1.7.0](https://github.com/willzhu16/athena/compare/v1.6.1...v1.7.0) (2026-09-21)
 
 
