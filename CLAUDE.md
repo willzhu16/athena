@@ -21,7 +21,7 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
     `COMMANDS` (verbatim copy of `commands/<name>.md`, currently just `conductor.md`) +
     one `.claude/hooks/<name>` per entry in `HOOKS` (verbatim copy of `hooks/<name>`,
     currently just `gate.mjs`) + one `.claude/skills/<name>/SKILL.md` per entry in
-    `SKILLS` (currently just `verify-change`);
+    `SKILLS` (`review-protocol`, `verify-change`, `write-a-packet`);
     tool `codex` → `AGENTS.md` + `.codex/config.toml` (file access) +
     `.codex/rules/artemis.rules` (commands), both from `permissions/codex.t<tier>.*`, and
     no `.claude/` surface or slash commands. Codex splits file and command policy across
@@ -160,7 +160,8 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   each skill's `description` and fetches the body only when it decides the skill applies, so
   a skill is the opposite trade from an instruction layer: the layer is always in context and
   must stay short, the skill body is free until it is needed. Measured on `verify-change`:
-  **31 always-on tokens against a 705-token body.**
+  **91 always-on tokens across three skills against 1915 tokens of bodies.** The same
+  content as instruction layers would have grown the bundle by half and blown the budget.
   - **The description is the mechanism, not a label.** It is the only part always loaded and
     the only thing routing sees, so harness-lint gates it: every skill needs one
     (`skillFrontmatterChecks`), their combined always-on cost has its own budget
@@ -171,6 +172,12 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
     the only number that says whether moving something into a skill was worth it.
   - Write the description by capability, not topic: what problem classes it handles, what it
     deliberately does not, in task language. `when_to_use` carries the triggers.
+  - **A process doc and its skill are a pair.** `review-protocol.md` and `task-packet.md`
+    keep the reasoning; `skills/review-protocol` and `skills/write-a-packet` carry what to
+    do and ship to every repo. Nothing mechanically checks they stay in step: the names
+    deliberately differ (`write-a-packet` routes better than `task-packet`), so the
+    conductor cross-link trick does not apply, and a name check would not catch content
+    drift anyway. Edit both. Known gap, not a solved one.
 - `conductor.md`, `task-packet.md`, `review-protocol.md`, `FOREMAN-NOTES.md` — process docs
   for multi-agent work (task packets, review rules, max-3-concurrency conductor pattern).
   FOREMAN-NOTES is the parking lot for out-of-scope runtime ideas (D-17/D-28).

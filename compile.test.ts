@@ -416,7 +416,7 @@ describe('compile CLI', () => {
 
       expect(lines).toHaveLength(1);
       expect(lines[0]).toMatch(
-        /^athena: compiled 5 file\(s\) \[sha:[0-9a-f]{16}\] -> CLAUDE\.md, \.claude\/settings\.json, \.claude\/commands\/conductor\.md, \.claude\/hooks\/gate\.mjs, \.claude\/skills\/verify-change\/SKILL\.md$/,
+        /^athena: compiled 7 file\(s\) \[sha:[0-9a-f]{16}\] -> CLAUDE\.md, \.claude\/settings\.json, \.claude\/commands\/conductor\.md, \.claude\/hooks\/gate\.mjs, \.claude\/skills\/review-protocol\/SKILL\.md, \.claude\/skills\/verify-change\/SKILL\.md, \.claude\/skills\/write-a-packet\/SKILL\.md$/,
       );
       // The project layer has to reach the compiled file, or a repo's own rules are the one
       // part of the harness that never ships.

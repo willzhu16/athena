@@ -5,6 +5,11 @@ vibes. No non-trivial agent work starts without one. Instantiate it as a GitHub 
 `.github/ISSUE_TEMPLATE/task.yml`, or inline in the repo for offline work. Small fixes may
 skip the packet — they never skip the gates.
 
+This file is the process document. The operational half ships to every claude-enabled repo as
+`skills/write-a-packet/SKILL.md`, loaded on demand when someone is actually scoping work —
+until then a generated repo could reach this format only through the issue template. **Keep
+the two in step:** this one carries the reasoning, the skill carries what to write.
+
 If you cannot fill every field, the work is not ready to delegate: go back to thinking.
 
 ---

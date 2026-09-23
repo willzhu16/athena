@@ -3,6 +3,11 @@
 Normative for the AI review pass (spec 10) and usable manually today. The human is always
 the last gate; this protocol governs what happens before that final read.
 
+This file is the process document. The operational half ships to every claude-enabled repo as
+`skills/review-protocol/SKILL.md`, which Claude Code loads on demand when a review is
+actually happening — a generated repo could previously reach these rules only by fetching a
+URL. **Keep the two in step:** this one carries the reasoning, the skill carries what to do.
+
 ## When an author-agent may claim "done"
 
 Only when local gates are green:

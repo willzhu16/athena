@@ -419,7 +419,9 @@ describe('doctor (a correctly compiled repo passes every check)', () => {
         '.claude/settings.json',
         '.claude/commands/conductor.md',
         '.claude/hooks/gate.mjs',
+        '.claude/skills/review-protocol/SKILL.md',
         '.claude/skills/verify-change/SKILL.md',
+        '.claude/skills/write-a-packet/SKILL.md',
         '.codex/config.toml',
         '.codex/rules/artemis.rules',
         'AGENTS.md',
@@ -678,7 +680,7 @@ describe('doctor CLI (the exit code is the enforcement, not the printout)', () =
 
       const { lines } = runCli(projectDir);
 
-      expect(lines).toHaveLength(10);
+      expect(lines).toHaveLength(12);
       expect(lines[0]).toBe('PASS  config — stack=ts tier=1 tools=claude,codex');
       expect(lines[1]).toBe('FAIL  CLAUDE.md — missing — run `athena compile`');
     });

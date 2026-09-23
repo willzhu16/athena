@@ -24,9 +24,11 @@
   },
   "skills": {
     "budgetTokens": 400,
-    "alwaysOnTokens": 31,
+    "alwaysOnTokens": 91,
     "onDemandTokens": {
-      "verify-change": 705
+      "review-protocol": 637,
+      "verify-change": 705,
+      "write-a-packet": 573
     }
   },
   "coverage": {
