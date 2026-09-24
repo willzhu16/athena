@@ -27,6 +27,7 @@ import {
   denySoundnessChecks,
   duplicateCheck,
   duplicateLines,
+  type Finding,
   type HarnessReport,
   harnessLint,
   hooksManifestCheck,
@@ -42,6 +43,7 @@ import {
   type RatchetFloor,
   type RatchetOverride,
   ratchetChecks,
+  ratchetFindings,
   readCoherence,
   readProfile,
   readRatchet,
@@ -1777,5 +1779,149 @@ describe('rule and frontmatter parsing edges', () => {
       null,
     );
     expect(skillDescription('---\ndescription: routed\n---\n\nbody\n')).toBe('routed');
+  });
+});
+
+describe('a ratchet that cannot be hollowed out', () => {
+  const floors = {
+    mutationBreak: { direction: 'floor' as const, tightest: 87, source: 'a config' },
+  };
+  const loosened = { bundleTokens: 3900, mutationBreak: 70 };
+  const verdictFor = (overrides: unknown[]): Finding =>
+    ratchetChecks({ floors, overrides } as RatchetFile, loosened)[0];
+
+  it('refuses an override that names no reason and no approver', () => {
+    // The whole point of an override is that someone signed for it. Comparing against '' let
+    // an override with those fields simply absent through, and the report then read
+    // "loosened 87 -> 70 by override (2026-09-24, undefined): undefined" and passed — which
+    // is precisely the "edit the config until the build is green" move this file exists to
+    // make visible.
+    const finding = verdictFor([{ floor: 'mutationBreak', to: 70, date: '2026-09-24' }]);
+
+    expect(finding.ok).toBe(false);
+    expect(finding.detail).toContain('no approved override');
+  });
+
+  it('refuses an override whose reason is only whitespace', () => {
+    const finding = verdictFor([
+      { floor: 'mutationBreak', to: 70, date: '2026-09-24', reason: '   ', approvedBy: 'owner' },
+    ]);
+
+    expect(finding.ok).toBe(false);
+  });
+
+  it('refuses an override that carries no date', () => {
+    const finding = verdictFor([
+      { floor: 'mutationBreak', to: 70, reason: 'a real reason', approvedBy: 'owner' },
+    ]);
+
+    expect(finding.ok).toBe(false);
+  });
+
+  it('still accepts an override with every field filled in', () => {
+    const finding = verdictFor([
+      {
+        floor: 'mutationBreak',
+        to: 70,
+        date: '2026-09-24',
+        reason: 'the floor was set on a lucky run',
+        approvedBy: 'owner',
+      },
+    ]);
+
+    expect(finding.ok).toBe(true);
+    expect(finding.detail).toContain('owner');
+  });
+
+  it('refuses a floors map with nothing in it rather than holding nothing quietly', () => {
+    // An empty map produces zero findings, so `harness-lint` exits 0 with every quality
+    // number unguarded and nothing on screen saying so. Same rule as the selftest jobs that
+    // fail when they find no files: a gate with nothing to check has not passed, it has not
+    // run.
+    const dir = scratchDir({ 'ratchet.json': JSON.stringify({ floors: {}, overrides: [] }) });
+    try {
+      expect(() => readRatchet(dir)).toThrow('non-empty');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an overrides value that is not a list', () => {
+    // `overrides: {}` survives until the first loosening, then `.find` throws out of the
+    // whole report instead of failing one check.
+    const dir = scratchDir({
+      'ratchet.json': JSON.stringify({ floors, overrides: {} }),
+    });
+    try {
+      expect(() => readRatchet(dir)).toThrow('must be a list');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a floor whose direction is not one of the two that exist', () => {
+    // A typo here silently reinterprets a ceiling as a floor, which inverts the comparison
+    // and turns the guard into permission to loosen.
+    const dir = scratchDir({
+      'ratchet.json': JSON.stringify({
+        floors: { bundleTokens: { direction: 'celing', tightest: 3900, source: 'a constant' } },
+        overrides: [],
+      }),
+    });
+    try {
+      expect(() => readRatchet(dir)).toThrow('direction');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports an unreadable ratchet.json as a failed finding instead of throwing', () => {
+    // harnessLint read the record unguarded, so a missing file replaced the entire report
+    // with an ENOENT stack trace. liveFloors beside it already guarded its own reads.
+    const dir = scratchDir({
+      'stryker.config.json': JSON.stringify({ thresholds: { break: 87 } }),
+    });
+    try {
+      const findings = ratchetFindings(dir);
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0].ok).toBe(false);
+      expect(findings[0].detail).toContain(RATCHET_FILE);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('--write against a record it cannot read', () => {
+  it('still writes the scorecard and leaves the diagnosis to the report', () => {
+    // Regression: writeHarnessArtifacts read the ratchet unguarded, so `--write` died on a
+    // corrupt ratchet.json before printing the finding that says what is wrong with it —
+    // the worst moment to crash, because --write is what someone runs to put it right.
+    const root = scratchDir({
+      [SCORECARD_FILE]: 'stale\n',
+      'ratchet.json': '{ truncated',
+      'stryker.config.json': JSON.stringify({ thresholds: { break: 87 } }),
+    });
+    try {
+      const scorecard = buildScorecard(
+        [{ stack: 'ts', targets: [], chars: 10, lines: 1, estimatedTokens: 3 }],
+        [],
+        { claims: [], acknowledgedUnsoundDenies: [] },
+        [],
+        [],
+        [],
+        join(root, 'skills'),
+      );
+
+      const written = writeHarnessArtifacts(root, scorecard);
+
+      expect(written).toHaveLength(1);
+      expect(written[0].endsWith(SCORECARD_FILE)).toBe(true);
+      // The unreadable record is still reported, so nothing is swallowed.
+      expect(ratchetFindings(root)[0].ok).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
