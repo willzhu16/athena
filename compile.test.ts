@@ -480,3 +480,41 @@ describe('compile CLI', () => {
     }
   });
 });
+
+describe('what the compiled hash is and is not sensitive to', () => {
+  const base: AthenaConfig = {
+    athenaVersion: 'v1',
+    stack: 'ts',
+    targets: [],
+    tools: ['claude'],
+  };
+
+  it('names a missing instruction layer rather than leaking a filesystem error', () => {
+    // doctor surfaces this message to whoever ran it. An ENOENT from readFileSync also
+    // mentions the filename, so asserting only that the path appears cannot tell the
+    // intended error from a raw one — and the raw one names an absolute athena-internal
+    // path that means nothing to someone working in a generated repo.
+    expect(() => buildBody({ ...base, stack: 'nope' }, instructionsDir, '')).toThrow(
+      'athena: instruction layer not found: 20-stack-nope.md',
+    );
+  });
+
+  it('ignores trailing whitespace in a repo project layer', () => {
+    // Drift is reported by comparing hashes, so anything that changes the hash without
+    // changing the rules is a false drift report. An editor adding a trailing newline to
+    // .athena/project.md would otherwise mark the repo as drifted at the next doctor run.
+    const plain = computeHash(buildBody(base, instructionsDir, '# Project\n\nA note.'));
+    const padded = computeHash(buildBody(base, instructionsDir, '# Project\n\nA note.\n\n  \n'));
+
+    expect(padded).toBe(plain);
+  });
+
+  it('does not ignore leading whitespace in a repo project layer', () => {
+    // The other half, and the reason this is trimEnd rather than trim: content at the top of
+    // the project layer is content, and a hash blind to it would miss a real edit.
+    const plain = computeHash(buildBody(base, instructionsDir, '# Project\n'));
+    const indented = computeHash(buildBody(base, instructionsDir, '\n\n# Project\n'));
+
+    expect(indented).not.toBe(plain);
+  });
+});

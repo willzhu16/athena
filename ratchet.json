@@ -12,6 +12,30 @@
       "tightest": 87,
       "source": "thresholds.break in stryker.config.json",
       "why": "A floor, so a LOWER number is the loosening. This is the one an agent stuck on a red build has the clearest motive to touch."
+    },
+    "coverageLines": {
+      "direction": "floor",
+      "tightest": 95,
+      "source": "lines in coverage-thresholds.json",
+      "why": "A floor, so a LOWER number is the loosening. Enforced by vitest from the same file this reads."
+    },
+    "coverageFunctions": {
+      "direction": "floor",
+      "tightest": 95,
+      "source": "functions in coverage-thresholds.json",
+      "why": "A floor, so a LOWER number is the loosening. Enforced by vitest from the same file this reads."
+    },
+    "coverageStatements": {
+      "direction": "floor",
+      "tightest": 95,
+      "source": "statements in coverage-thresholds.json",
+      "why": "A floor, so a LOWER number is the loosening. Enforced by vitest from the same file this reads."
+    },
+    "coverageBranches": {
+      "direction": "floor",
+      "tightest": 93,
+      "source": "branches in coverage-thresholds.json",
+      "why": "A floor, so a LOWER number is the loosening. Enforced by vitest from the same file this reads."
     }
   },
   "overrides": []
