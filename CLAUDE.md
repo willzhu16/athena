@@ -61,7 +61,11 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
   of each floor from the config that enforces it (`BUNDLE_TOKEN_BUDGET`, stryker's
   `thresholds.break`) and fails when it is looser than the tightest value ever recorded.
   Direction matters and is stored per floor: the bundle budget is a **ceiling**, so a higher
-  number is the loosening; the mutation score is a **floor**, so a lower one is.
+  number is the loosening; the mutation score and the four coverage thresholds are **floors**,
+  so a lower one is. Six numbers are locked.
+  - Coverage lives in `coverage-thresholds.json` rather than inline in `vitest.config.ts`,
+    so vitest (which enforces it) and the ratchet (which holds it) read the same bytes. A
+    threshold restated in two files is one that eventually differs in two files.
   - **Loosening is still possible, and that is deliberate.** A floor set on a lucky
     measurement sometimes has to come down. It needs an entry in `overrides` naming the
     exact value, with a date, a reason and an approver — so it arrives as a reviewed diff

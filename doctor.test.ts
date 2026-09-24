@@ -728,3 +728,84 @@ describe('doctor (a half-adopted repo still gets the friendly message)', () => {
     expect(canonicalJson(undefined)).toBe('null');
   });
 });
+
+describe('an installed file that cannot be read', () => {
+  const athenaDir = dirname(fileURLToPath(import.meta.url));
+  const dirs = {
+    instructionsDir: join(athenaDir, 'instructions'),
+    permissionsDir: join(athenaDir, 'permissions'),
+    commandsDir: join(athenaDir, 'commands'),
+    hooksDir: join(athenaDir, 'hooks'),
+    skillsDir: join(athenaDir, 'skills'),
+  };
+  const config: AthenaConfig = {
+    athenaVersion: 'v1',
+    stack: 'ts',
+    targets: [],
+    tools: ['claude'],
+  };
+
+  /** A compiled project, ready to be broken one file at a time. */
+  const compiledProject = (): string => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'athena-doctor-'));
+    mkdirSync(join(projectDir, '.athena'), { recursive: true });
+    writeFileSync(join(projectDir, '.athena', 'config.json'), JSON.stringify(config));
+    mkdirSync(join(projectDir, '.github', 'ISSUE_TEMPLATE'), { recursive: true });
+    writeFileSync(join(projectDir, '.github', 'ISSUE_TEMPLATE', 'task.yml'), 'name: task\n');
+    writeOutputs(projectDir, compile(config, { ...dirs, projectLayer: '# project\n' }));
+    return projectDir;
+  };
+
+  it('reports it as a failed check instead of crashing the run', () => {
+    // doctor's contract is that it reports and never throws — an unreadable EXPECTED source
+    // was already handled, but the installed file itself was read unguarded, so a path that
+    // exists and cannot be read (a directory left where the file belongs) killed the report
+    // and hid every other check behind an EISDIR stack trace.
+    const projectDir = compiledProject();
+    try {
+      rmSync(join(projectDir, '.claude', 'settings.json'));
+      mkdirSync(join(projectDir, '.claude', 'settings.json'));
+
+      const checks = doctor(
+        projectDir,
+        dirs.instructionsDir,
+        dirs.permissionsDir,
+        dirs.commandsDir,
+        dirs.hooksDir,
+        dirs.skillsDir,
+      );
+      const settings = checks.find((check) => check.name === '.claude/settings.json');
+
+      expect(settings?.ok).toBe(false);
+      expect(settings?.detail).toContain('cannot read');
+      // The rest of the report must still be there: one broken file is not a reason to stop
+      // telling the reader what else is wrong.
+      expect(checks.some((check) => check.name === 'CLAUDE.md')).toBe(true);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports an unreadable compiled file rather than crashing on it', () => {
+    const projectDir = compiledProject();
+    try {
+      rmSync(join(projectDir, 'CLAUDE.md'));
+      mkdirSync(join(projectDir, 'CLAUDE.md'));
+
+      const checks = doctor(
+        projectDir,
+        dirs.instructionsDir,
+        dirs.permissionsDir,
+        dirs.commandsDir,
+        dirs.hooksDir,
+        dirs.skillsDir,
+      );
+      const compiled = checks.find((check) => check.name === 'CLAUDE.md');
+
+      expect(compiled?.ok).toBe(false);
+      expect(compiled?.detail).toContain('cannot read');
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});
