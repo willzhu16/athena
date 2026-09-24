@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/willzhu16/athena/compare/v1.9.0...v1.9.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **acceptance:** make the multi-packet gate actually work ([#36](https://github.com/willzhu16/athena/issues/36)) ([4896ba3](https://github.com/willzhu16/athena/commit/4896ba300a665b8da255aa538c16a9b114d4b180))
+
 ## [1.9.0](https://github.com/willzhu16/athena/compare/v1.8.0...v1.9.0) (2026-09-24)
 
 
