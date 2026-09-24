@@ -895,10 +895,39 @@ export interface RatchetFile {
   overrides: RatchetOverride[];
 }
 
+/** A present, non-blank string. Missing and whitespace-only both count as absent. */
+const filledIn = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
+
+/**
+ * Read the record, validated the way `readCoherence` validates its manifest. The shapes
+ * rejected here are the ones that leave the ratchet looking installed while holding nothing:
+ * an empty `floors` map produces zero findings and a green run with every number unguarded,
+ * and a non-list `overrides` survives until the first loosening and then throws `.find` out
+ * of the whole report. A gate with nothing to check has not passed, it has not run.
+ */
 export const readRatchet = (athenaRoot: string): RatchetFile => {
   const parsed = JSON.parse(readFileSync(join(athenaRoot, RATCHET_FILE), 'utf8')) as RatchetFile;
   if (parsed.floors === undefined || parsed.overrides === undefined) {
     throw new Error(`${RATCHET_FILE} needs both "floors" and "overrides"`);
+  }
+  if (!Array.isArray(parsed.overrides)) {
+    throw new Error(`${RATCHET_FILE} "overrides" must be a list`);
+  }
+  const names = Object.keys(parsed.floors);
+  if (Array.isArray(parsed.floors) || names.length === 0) {
+    throw new Error(`${RATCHET_FILE} "floors" must be a non-empty object`);
+  }
+  for (const name of names) {
+    const floor = parsed.floors[name];
+    if (!floor || (floor.direction !== 'floor' && floor.direction !== 'ceiling')) {
+      throw new Error(`${RATCHET_FILE} floor "${name}" needs a direction of floor or ceiling`);
+    }
+    if (typeof floor.tightest !== 'number' || Number.isNaN(floor.tightest)) {
+      throw new Error(`${RATCHET_FILE} floor "${name}" needs a numeric "tightest"`);
+    }
+    if (!filledIn(floor.source)) {
+      throw new Error(`${RATCHET_FILE} floor "${name}" must name the config it reads`);
+    }
   }
   return parsed;
 };
@@ -959,12 +988,17 @@ export const ratchetChecks = (ratchet: RatchetFile, live: Record<string, number>
           : `${value} holds at its tightest`,
       };
     }
+    // `filledIn`, not `!== ''`: an override with these fields simply absent compared unequal
+    // to the empty string and sailed through, and the report then read "by override
+    // (2026-09-24, undefined): undefined" while passing. An unsigned permission slip is the
+    // move this record exists to make visible, so absent and blank are both refused.
     const override = ratchet.overrides.find(
       (entry) =>
         entry.floor === name &&
         entry.to === value &&
-        entry.reason !== '' &&
-        entry.approvedBy !== '',
+        filledIn(entry.date) &&
+        filledIn(entry.reason) &&
+        filledIn(entry.approvedBy),
     );
     if (override) {
       return {
@@ -979,6 +1013,28 @@ export const ratchetChecks = (ratchet: RatchetFile, live: Record<string, number>
       detail: `${value} is looser than the recorded ${floor.tightest} with no approved override — add one to ${RATCHET_FILE} or restore the value`,
     };
   });
+
+/**
+ * The ratchet's findings, with the read of the record guarded. `liveFloors` already degrades
+ * to NaN rather than throwing, and `readRatchet` beside it did not, so a missing or malformed
+ * `ratchet.json` replaced the entire report with a stack trace — the one file whose job is to
+ * make a weakening visible, failing in the way that shows least.
+ */
+export const ratchetFindings = (athenaRoot: string): Finding[] => {
+  let ratchet: RatchetFile;
+  try {
+    ratchet = readRatchet(athenaRoot);
+  } catch (error) {
+    return [
+      {
+        name: 'ratchet',
+        ok: false,
+        detail: `unreadable ${RATCHET_FILE}: ${(error as Error).message}`,
+      },
+    ];
+  }
+  return ratchetChecks(ratchet, liveFloors(athenaRoot));
+};
 
 /**
  * The record after a run: each floor clicks to the live value when that is tighter, never the
@@ -1215,7 +1271,7 @@ export const harnessLint = (
       skillAmbiguityCheck(resolvedSkillsDir),
       ...hooksWiredCheck(permissionsDir),
       ...codexSecretsCheck(permissionsDir),
-      ...ratchetChecks(readRatchet(athenaRoot), liveFloors(athenaRoot)),
+      ...ratchetFindings(athenaRoot),
       scorecardCheck(dirname(resolvedCommandsDir), scorecard),
     ],
     costs,
@@ -1236,13 +1292,23 @@ export const harnessLint = (
  * ever be exercised by writing athena's own committed files. Here it runs against a scratch
  * directory, and the ratchet's one-way rule is covered rather than merely asserted.
  */
-export const writeHarnessArtifacts = (athenaRoot: string, scorecard: Scorecard): string[] => [
-  writeScorecard(athenaRoot, scorecard),
-  // Clicks in the same breath, and only ever tighter. There is deliberately no flag that
-  // loosens it: that path is an override entry the owner approves, so it arrives as a
-  // reviewable diff rather than as a command anyone can run.
-  writeRatchet(athenaRoot, tightenedRatchet(readRatchet(athenaRoot), liveFloors(athenaRoot))),
-];
+export const writeHarnessArtifacts = (athenaRoot: string, scorecard: Scorecard): string[] => {
+  const written = [writeScorecard(athenaRoot, scorecard)];
+  try {
+    // Clicks in the same breath, and only ever tighter. There is deliberately no flag that
+    // loosens it: that path is an override entry the owner approves, so it arrives as a
+    // reviewable diff rather than as a command anyone can run.
+    written.push(
+      writeRatchet(athenaRoot, tightenedRatchet(readRatchet(athenaRoot), liveFloors(athenaRoot))),
+    );
+  } catch {
+    // Safe to ignore here, and deliberately not silent: a record that will not parse cannot
+    // be clicked, and the report `main` prints straight after carries the failed `ratchet`
+    // finding that names the reason. Throwing instead would kill `--write` before it printed
+    // the one line telling whoever ran it what to fix.
+  }
+  return written;
+};
 
 /** Persist the clicked ratchet. Paired with `tightenedRatchet`, which is where the rule lives. */
 export const writeRatchet = (athenaRoot: string, ratchet: RatchetFile): string => {
