@@ -91,13 +91,13 @@ gets no such net: run the same gate yourself before you claim anything.
 
 ## Anti-loop
 
-Full [review protocol](https://github.com/willzhu16/athena/blob/v1/review-protocol.md).
-
 - A fix that fails its gate **twice in a row** = stop, summarise the disagreement, ask.
   Do not try a third variation — two failures mean the mental model is wrong.
-- Max two AI review rounds per PR; round three is a human decision.
 - Do not re-litigate settled decisions (DECISIONS.md, in-repo ADRs) or the packet's
   non-goals. Disagreement becomes an issue, not a review comment or a silent workaround.
+
+Review has one further limit of its own. The `review-protocol` skill carries it and loads
+when reviewing is what you are actually doing.
 
 ## Session log
 

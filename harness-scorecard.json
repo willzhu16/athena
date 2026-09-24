@@ -6,17 +6,17 @@
   "bundles": {
     "worstCase": {
       "config": "ts+vscode-ext+workers",
-      "estimatedTokens": 3851
+      "estimatedTokens": 3846
     },
     "perConfig": {
-      "python+none": 2841,
-      "python+vscode-ext": 3273,
-      "python+workers": 3366,
-      "python+vscode-ext+workers": 3797,
-      "ts+none": 2894,
-      "ts+vscode-ext": 3326,
-      "ts+workers": 3419,
-      "ts+vscode-ext+workers": 3851
+      "python+none": 2836,
+      "python+vscode-ext": 3268,
+      "python+workers": 3361,
+      "python+vscode-ext+workers": 3793,
+      "ts+none": 2889,
+      "ts+vscode-ext": 3321,
+      "ts+workers": 3414,
+      "ts+vscode-ext+workers": 3846
     }
   },
   "commands": {
@@ -26,7 +26,7 @@
     "budgetTokens": 400,
     "alwaysOnTokens": 91,
     "onDemandTokens": {
-      "review-protocol": 637,
+      "review-protocol": 604,
       "verify-change": 705,
       "write-a-packet": 573
     }
