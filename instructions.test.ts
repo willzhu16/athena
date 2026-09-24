@@ -22,8 +22,18 @@ describe('instruction layers', () => {
     expect(universal).toContain(
       'https://github.com/willzhu16/platform/blob/v1/handbook/definition-of-done.md',
     );
-    expect(universal).toContain('https://github.com/willzhu16/athena/blob/v1/review-protocol.md');
     expect(security).toContain('https://github.com/willzhu16/platform/blob/v1/security/README.md');
+  });
+
+  it('reaches the review protocol through the shipped skill, not a URL', () => {
+    // This used to be a link to review-protocol.md in the athena repo, because the procedure
+    // lived somewhere a generated repo could not reach. It ships as a skill now, so the layer
+    // names the skill instead: a local file that loads on demand beats a fetch, and it is the
+    // reason the review-round limit could leave the always-on layer at all.
+    const universal = readFileSync(join(instructionsDir, '00-universal.md'), 'utf8');
+
+    expect(universal).toContain('`review-protocol` skill');
+    expect(universal).not.toContain('blob/v1/review-protocol.md');
   });
 
   it('treats demonstrated correctness and security defects as blocking review findings', () => {

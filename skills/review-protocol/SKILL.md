@@ -36,11 +36,11 @@ not mention it. If fixing it would exceed scope, stop and ask rather than shippi
 
 ## When to stop
 
-- **A fix that fails its gate twice in a row: stop.** Two failures mean the mental model is
-  wrong, not that the third variation lands it. Summarise what you tried and ask.
+The universal anti-loop rules are always in context and are deliberately not repeated here:
+a fix that fails its gate twice means stop, and settled decisions are not reopened. Review
+adds one limit of its own.
+
 - **Two review rounds per PR.** Round three is a human decision, not another lap.
-- **Settled decisions are not reviewable.** Disagreeing with an ADR or the packet's non-goals
-  produces a new issue, not a review comment and not a silent workaround.
 
 A finding without `file:line` and a concrete failure scenario is invalid. That rule exists
 because an unfalsifiable comment costs a round trip and settles nothing.
