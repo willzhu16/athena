@@ -1,0 +1,7 @@
+{
+  "note": "Read by vitest.config.ts, which enforces these, and by harness-lint's ratchet, which holds them one-way. A single source so the gate and the record cannot disagree: a threshold restated in two files is a threshold that eventually differs in two files. Never lower one to turn a red build green — add the missing test, or take the documented override path in ratchet.json.",
+  "lines": 95,
+  "functions": 95,
+  "statements": 95,
+  "branches": 93
+}

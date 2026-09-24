@@ -1,4 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
+
+/**
+ * The floors live in their own JSON file so vitest, which enforces them, and harness-lint's
+ * ratchet, which holds them one-way, read the same bytes. Restating a threshold in a second
+ * file is how the gate and the record come to disagree, and the ratchet is only meaningful if
+ * it reads the number that actually enforces.
+ */
+const thresholds = JSON.parse(
+  readFileSync(new URL('./coverage-thresholds.json', import.meta.url), 'utf8'),
+);
 
 export default defineConfig({
   test: {
@@ -17,9 +28,14 @@ export default defineConfig({
       include: ['compile.ts', 'doctor.ts', 'harness-lint.ts', 'acceptance.ts'],
       // Floors, ratcheted to the measured numbers and set under them. athena is where the
       // testing standard is written, so it holds itself to the standard it publishes.
-      // Never lower one to turn a red build green — add the missing test.
-      // Measured 2026-09-16: 98.84 statements, 96.29 branches, 100 functions, 98.73 lines.
-      thresholds: { lines: 95, functions: 95, statements: 95, branches: 93 },
+      // Lowering one now fails harness-lint's ratchet unless ratchet.json carries an
+      // approved override, so the "never lower this" comment is enforced rather than asked.
+      thresholds: {
+        lines: thresholds.lines,
+        functions: thresholds.functions,
+        statements: thresholds.statements,
+        branches: thresholds.branches,
+      },
     },
   },
 });
