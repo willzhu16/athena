@@ -6,9 +6,11 @@ name: acceptance
 # blocking finding. The thing doing the finding was a human reading a diff, which is the work
 # this harness exists to remove. This is that one rule, mechanised.
 #
-# athena checks the packet committed at packets/acceptance-gate.md, which is both the record
-# for that change and the worked example. A repo whose packets live in GitHub issues points
-# the same tool at an issue body instead:
+# athena checks every packet committed under packets/, which are both the record for each
+# change and the worked examples. The whole directory rather than one named file: this ran
+# `packets/acceptance-gate.md` while check.ps1 already read the directory, so a second packet
+# added beside the first was checked locally and ignored by the gate that blocks the merge.
+# A repo whose packets live in GitHub issues points the same tool at an issue body instead:
 #
 #   gh issue view "$PACKET" --json body --jq .body > packet.md
 #   pnpm test && pnpm acceptance packet.md reports/tests.json
@@ -51,4 +53,4 @@ jobs:
       - name: Test
         run: pnpm test
       - name: Check every criterion has a passing test
-        run: pnpm acceptance packets/acceptance-gate.md reports/tests.json
+        run: pnpm acceptance packets reports/tests.json

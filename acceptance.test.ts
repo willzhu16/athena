@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   acceptance,
@@ -548,5 +549,87 @@ describe('every packet gets checked, not just the one someone named', () => {
 
     expect(anyFailed(findings)).toBe(true);
     expect(findings[0]?.detail).toContain('nothing was checked');
+  });
+});
+
+describe('the gate CI actually runs', () => {
+  const workflow = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '.github', 'workflows', 'acceptance.yml'),
+    'utf8',
+  );
+
+  it('points the gate at the packets directory, not one named file', () => {
+    // check.ps1 reads every packet and this workflow read one, so a second packet added
+    // beside the first was checked on the author's machine and ignored by the check that
+    // blocks the merge. That is exactly the failure acceptanceAll was written to prevent,
+    // left alive in the only place where it decides anything.
+    const invocation = workflow
+      .split('\n')
+      .find((line) => line.includes('pnpm acceptance') && !line.trimStart().startsWith('#'));
+
+    expect(invocation).toBeDefined();
+    expect(invocation).toContain('pnpm acceptance packets reports/tests.json');
+  });
+});
+
+describe('more than one packet in the same run', () => {
+  const twoPackets = [
+    { name: 'first', source: '- AC-1: does a thing\n' },
+    { name: 'second', source: '- AC-2: does another thing\n' },
+  ];
+  const bothCovered = JSON.stringify({
+    testResults: [
+      {
+        assertionResults: [
+          { fullName: 'AC-1: covers the first', status: 'passed' },
+          { fullName: 'AC-2: covers the second', status: 'passed' },
+        ],
+      },
+    ],
+  });
+
+  it('does not report one packet ids as stale because they belong to another', () => {
+    // Every criterion here is covered and nothing is wrong, but the stale check ran per
+    // packet against one packet's ids, so each packet called the other's ids unknown. The
+    // gate therefore went red the moment a second packet existed — which is the whole
+    // feature — and the obvious way to quieten it is to delete the stale check that catches
+    // criteria renamed out from under a test.
+    const findings = acceptanceAll(twoPackets, bothCovered);
+
+    expect(anyFailed(findings)).toBe(false);
+  });
+
+  it('still catches an id no packet anywhere lists', () => {
+    // The other half: widening the known set must not turn the check off. AC-3 belongs to
+    // no packet, so it is a test asserting something nobody asked for.
+    const findings = acceptanceAll(
+      twoPackets,
+      JSON.stringify({
+        testResults: [
+          {
+            assertionResults: [
+              { fullName: 'AC-1: covers the first', status: 'passed' },
+              { fullName: 'AC-2: covers the second', status: 'passed' },
+              { fullName: 'AC-3: covers nothing in any packet', status: 'passed' },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(anyFailed(findings)).toBe(true);
+    expect(findings.some((finding) => finding.detail.includes('AC-3'))).toBe(true);
+  });
+
+  it('leaves the single-packet reading exactly as it was', () => {
+    // A lone packet has no siblings to borrow ids from, so an id it does not list is still
+    // stale. Widening the set must not weaken the one-packet case.
+    const findings = acceptanceAll(
+      [{ name: 'only', source: '- AC-1: does a thing\n' }],
+      bothCovered,
+    );
+
+    expect(anyFailed(findings)).toBe(true);
+    expect(findings.some((finding) => finding.detail.includes('AC-2'))).toBe(true);
   });
 });

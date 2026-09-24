@@ -185,8 +185,18 @@ const packetChecks = (criteria: Criterion[]): Finding[] => {
 /**
  * Check a packet against a test report. Returns one Finding per invariant, in the same shape
  * doctor and harness-lint use, so the three print and fail identically.
+ *
+ * `claimedElsewhere` is every criterion id the other packets in the same run define. A test
+ * naming a sibling packet's id is doing its job, not referring to something that no longer
+ * exists, and without this each packet called every other packet's ids stale — so the gate
+ * went red the moment a second packet existed. Empty for a lone packet, which is why the
+ * one-packet reading is unchanged.
  */
-export const acceptance = (packet: string, testReport: string): Finding[] => {
+export const acceptance = (
+  packet: string,
+  testReport: string,
+  claimedElsewhere: ReadonlySet<string> = new Set(),
+): Finding[] => {
   const criteria = parseCriteria(packet);
   if (criteria.length === 0) {
     // A packet with no criteria is not a packet. Passing it silently would make the whole
@@ -210,7 +220,7 @@ export const acceptance = (packet: string, testReport: string): Finding[] => {
     ...packetChecks(criteria),
     ...coverageChecks(criteria, outcomes),
   ];
-  const stale = staleReferences(criteria, outcomes);
+  const stale = staleReferences(criteria, outcomes).filter((id) => !claimedElsewhere.has(id));
   findings.push({
     name: 'no stale criterion references',
     ok: stale.length === 0,
@@ -261,8 +271,14 @@ export const acceptanceAll = (packets: NamedPacket[], testReport: string): Findi
     return [{ name: 'packets', ok: false, detail: 'no packet files found — nothing was checked' }];
   }
   const many = packets.length > 1;
+  // Every id the run as a whole defines. A criterion lives in exactly one packet, but the
+  // test report covers them all, so "is this id known" is a question about the run and not
+  // about one file.
+  const claimed = new Set(
+    packets.flatMap((packet) => parseCriteria(packet.source).map((criterion) => criterion.id)),
+  );
   return packets.flatMap((packet) =>
-    acceptance(packet.source, testReport).map((finding) => ({
+    acceptance(packet.source, testReport, claimed).map((finding) => ({
       ...finding,
       name: many ? `${packet.name}: ${finding.name}` : finding.name,
     })),
