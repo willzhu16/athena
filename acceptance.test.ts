@@ -1,13 +1,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   acceptance,
+  acceptanceAll,
   anyFailed,
   type Criterion,
   coverageChecks,
   main,
+  packetFiles,
   parseCriteria,
   parseTestReport,
   staleReferences,
@@ -15,6 +17,14 @@ import {
 } from './acceptance.ts';
 
 /** A vitest JSON report carrying the given test names and outcomes. */
+/** A throwaway directory seeded with the given files, matching the doctor tests style. */
+const scratchDir = (files: Record<string, string>): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'athena-acceptance-'));
+  for (const [name, contents] of Object.entries(files)) {
+    writeFileSync(join(dir, name), contents);
+  }
+  return dir;
+};
 const report = (tests: [string, 'passed' | 'failed' | 'skipped'][]): string =>
   JSON.stringify({
     testResults: [
@@ -455,5 +465,88 @@ describe('reading a pytest report', () => {
     expect(coverageChecks(criteria, [{ name: 'AC-3: does the thing', passed: true }])[0]?.ok).toBe(
       true,
     );
+  });
+});
+
+describe('every packet gets checked, not just the one someone named', () => {
+  const packet = (id: string): string =>
+    ['# Task packet', '', '**Acceptance criteria**', '', `- ${id}: something observable`].join(
+      '\n',
+    );
+  const report = (names: string[]): string =>
+    JSON.stringify({
+      testResults: [
+        { assertionResults: names.map((title) => ({ fullName: title, status: 'passed' })) },
+      ],
+    });
+
+  it('resolves a single file to itself, so the workflow that names one packet is unchanged', () => {
+    // platform's reusable acceptance workflow resolves one packet from the issue a PR closes
+    // and passes that path. Breaking the single-file form would break every generated repo.
+    const dir = scratchDir({ 'one.md': packet('AC-1') });
+    try {
+      expect(packetFiles(join(dir, 'one.md'))).toEqual([join(dir, 'one.md')]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves a directory to every packet in it, sorted', () => {
+    const dir = scratchDir({
+      'b.md': packet('AC-2'),
+      'a.md': packet('AC-1'),
+      'notes.txt': 'not a packet',
+    });
+    try {
+      expect(packetFiles(dir).map((path) => basename(path))).toEqual(['a.md', 'b.md']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a second packet whose criterion nothing covers', () => {
+    // The gap this closes. check.ps1 named one packet, so a second one beside it was read by
+    // nothing: its criteria went unchecked while the step reported green.
+    const findings = acceptanceAll(
+      [
+        { name: 'first', source: packet('AC-1') },
+        { name: 'second', source: packet('AC-2') },
+      ],
+      report(['AC-1: covered by this test']),
+    );
+
+    expect(findings.some((finding) => !finding.ok && finding.name.includes('second'))).toBe(true);
+    expect(anyFailed(findings)).toBe(true);
+  });
+
+  it('prefixes findings with the packet once there is more than one', () => {
+    // "AC-1 covered" says nothing about which packet's AC-1 when two are checked together.
+    const findings = acceptanceAll(
+      [
+        { name: 'alpha', source: packet('AC-1') },
+        { name: 'beta', source: packet('AC-1') },
+      ],
+      report(['AC-1: covered']),
+    );
+
+    expect(findings.every((finding) => /^(alpha|beta): /.test(finding.name))).toBe(true);
+  });
+
+  it('leaves names alone for a single packet, so existing output does not churn', () => {
+    const findings = acceptanceAll(
+      [{ name: 'only', source: packet('AC-1') }],
+      report(['AC-1: yes']),
+    );
+
+    expect(findings.every((finding) => !finding.name.startsWith('only: '))).toBe(true);
+  });
+
+  it('fails when no packets were found rather than passing vacuously', () => {
+    // A directory matching nothing looks identical to a directory whose every criterion is
+    // covered. The second reading is how a renamed folder turns the gate off silently.
+    const findings = acceptanceAll([], report([]));
+
+    expect(anyFailed(findings)).toBe(true);
+    expect(findings[0]?.detail).toContain('nothing was checked');
   });
 });
