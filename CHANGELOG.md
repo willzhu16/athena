@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.0](https://github.com/willzhu16/athena/compare/v1.8.0...v1.9.0) (2026-09-24)
+
+
+### Features
+
+* **acceptance:** check every packet, not the one someone named ([#34](https://github.com/willzhu16/athena/issues/34)) ([5599cd8](https://github.com/willzhu16/athena/commit/5599cd88d31a8171c3727c55fc86a5e20d0e9502))
+* **harness:** ratchet the coverage floors too ([#31](https://github.com/willzhu16/athena/issues/31)) ([20907ec](https://github.com/willzhu16/athena/commit/20907ecc5384dbface7c4230a2746df6abe786d8))
+
+
+### Bug Fixes
+
+* **harness:** close three ways the ratchet held nothing ([#35](https://github.com/willzhu16/athena/issues/35)) ([4e4c16a](https://github.com/willzhu16/athena/commit/4e4c16a62a8f4d7edb3007eaea3b0e552692247e))
+* **harness:** report unreadable files instead of crashing on them ([#30](https://github.com/willzhu16/athena/issues/30)) ([b24b332](https://github.com/willzhu16/athena/commit/b24b33283063e876e9c001705f41ae49b0f824d7))
+* **instructions:** give each anti-loop rule exactly one home ([#32](https://github.com/willzhu16/athena/issues/32)) ([3009acd](https://github.com/willzhu16/athena/commit/3009acd770cb9266f15defc6fdc36beeec476d48))
+
 ## [1.8.0](https://github.com/willzhu16/athena/compare/v1.7.0...v1.8.0) (2026-09-23)
 
 
