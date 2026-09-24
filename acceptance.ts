@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -224,16 +225,64 @@ export const acceptance = (packet: string, testReport: string): Finding[] => {
 /** The CLI's verdict. Exported so the rule that fails the run is reachable from a test. */
 export const anyFailed = (findings: Finding[]): boolean => findings.some((finding) => !finding.ok);
 
+/** One packet and its contents, so the orchestration below can stay free of the filesystem. */
+export interface NamedPacket {
+  name: string;
+  source: string;
+}
+
+/**
+ * The packets a path names: the single file, or every `.md` in the directory.
+ *
+ * A directory is the answer to a silent gap — `check.ps1` named one packet, so a second one
+ * added beside it was never read and its criteria went unchecked while the gate reported
+ * green. A file still works unchanged, because platform's reusable workflow resolves one
+ * packet from the issue a PR closes and passes exactly that.
+ */
+export const packetFiles = (packetPath: string): string[] =>
+  statSync(packetPath).isDirectory()
+    ? readdirSync(packetPath)
+        .filter((name) => name.endsWith('.md'))
+        .sort()
+        .map((name) => join(packetPath, name))
+    : [packetPath];
+
+/**
+ * Findings across every packet. Names are prefixed with the packet once there is more than
+ * one, because "AC-1 covered" tells you nothing about which packet's AC-1 when two are
+ * checked in the same run.
+ *
+ * No packets at all is a failure, not a pass. A directory that matches nothing looks exactly
+ * like a directory whose every criterion is covered, and the second reading is the dangerous
+ * one — it is how a renamed folder turns the gate off without anyone noticing.
+ */
+export const acceptanceAll = (packets: NamedPacket[], testReport: string): Finding[] => {
+  if (packets.length === 0) {
+    return [{ name: 'packets', ok: false, detail: 'no packet files found — nothing was checked' }];
+  }
+  const many = packets.length > 1;
+  return packets.flatMap((packet) =>
+    acceptance(packet.source, testReport).map((finding) => ({
+      ...finding,
+      name: many ? `${packet.name}: ${finding.name}` : finding.name,
+    })),
+  );
+};
+
 export const main = (): void => {
   const [packetPath, reportPath] = process.argv.slice(2);
   if (!packetPath || !reportPath) {
-    console.log('usage: athena acceptance <packet.md> <test-report.json>');
+    console.log('usage: athena acceptance <packet.md | packets-dir> <test-report.json>');
     process.exitCode = 1;
     return;
   }
   let findings: Finding[];
   try {
-    findings = acceptance(readFileSync(packetPath, 'utf8'), readFileSync(reportPath, 'utf8'));
+    const packets = packetFiles(packetPath).map((file) => ({
+      name: basename(file, '.md'),
+      source: readFileSync(file, 'utf8'),
+    }));
+    findings = acceptanceAll(packets, readFileSync(reportPath, 'utf8'));
   } catch (error) {
     findings = [{ name: 'input', ok: false, detail: (error as Error).message }];
   }

@@ -102,7 +102,11 @@ parent directory has `CLAUDE.md`/`PROJECT-GUIDE.md`, read those for workspace-le
 - `pnpm acceptance <packet.md> <report.json>` — fails the build for any acceptance
   criterion with no passing test. Criteria carry ids (`- AC-1: ...`); a test claims one
   by writing `AC-1:` in its name. `pnpm test` writes `reports/tests.json` for it, and
-  `check.ps1` runs it against `packets/acceptance-gate.md` — athena's own packet, kept
+  `check.ps1` runs it against the whole `packets/` directory. **Pass a directory and every
+  packet in it is checked**; pass a file and only that one is, which is what platform's
+  reusable workflow does after resolving the packet from the issue a PR closes. A directory
+  matching nothing FAILs rather than passing vacuously. It used to name one file, so a second
+  packet beside it was read by nothing — `packets/acceptance-gate.md` is still athena's own packet, kept
   as the worked example. Mechanises blocking finding 2 of `review-protocol.md`.
 - Property tests live in `properties.test.ts` (fast-check), separate from the per-module
   test files because the seed is configured once there and the invariants span modules.
