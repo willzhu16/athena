@@ -348,3 +348,40 @@ describe('the weakening table covers every gate', () => {
     }
   });
 });
+
+describe("the mutation gate's own verdict", () => {
+  /**
+   * Stryker counts a timed-out mutant as killed. That is right for an infinite loop and wrong
+   * for a mutant that merely made the code slower, and the two are told apart only by how
+   * long the runner waits. Left at the default 5000ms this file was the thing that pushed
+   * them over: it copies the shipped config, so it covers most of harness-lint, and every
+   * mutant there began re-running twenty-odd slow tests.
+   *
+   * Measured on 59d8c52, same machine, back to back. At the default the score read 93.25,
+   * 93.09 and 94.49 with 56 to 87 timeouts, so a busier machine bought three points. At the
+   * committed values three consecutive runs read 90.50, identical down to the 2 timeouts,
+   * which is the count from before this file existed. A floor ratcheted against the higher
+   * number would go red on a slow runner with nothing wrong, which is the failure this whole
+   * file exists to prevent, aimed this time at the gate doing the measuring.
+   */
+  const MINIMUM_TIMEOUT_MS = 30_000;
+  const MINIMUM_TIMEOUT_FACTOR = 3;
+
+  const stryker = JSON.parse(
+    readFileSync(join(athenaDir, 'stryker.config.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  it('waits long enough that a slow mutant is judged rather than timed out', () => {
+    expect(stryker.timeoutMS).toBeGreaterThanOrEqual(MINIMUM_TIMEOUT_MS);
+    expect(stryker.timeoutFactor).toBeGreaterThanOrEqual(MINIMUM_TIMEOUT_FACTOR);
+  });
+
+  it('keeps the break threshold below the honest measurement, not the timeout-inflated one', () => {
+    // 90.5 is what the gate scores when nothing is decided by a stopwatch. The floor has to
+    // sit under that with room for real variance, and anyone ratcheting it should ratchet
+    // against a run made with these timeouts rather than against a lucky one.
+    const thresholds = stryker.thresholds as { break: number };
+
+    expect(thresholds.break).toBeLessThan(90);
+  });
+});
