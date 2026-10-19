@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.2](https://github.com/willzhu16/athena/compare/v1.9.1...v1.9.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **biome:** point $schema at the installed package, not a pinned URL ([#40](https://github.com/willzhu16/athena/issues/40)) ([ebba63f](https://github.com/willzhu16/athena/commit/ebba63fa31d05b1d9081acb79f4ac24c8f602e34))
+* **deps:** bump lockfile to clear 5 osv advisories ([#42](https://github.com/willzhu16/athena/issues/42)) ([c9095c3](https://github.com/willzhu16/athena/commit/c9095c34e655acbfc2796313f03cb60893f8f970))
+* **harness:** stop the mutation score depending on machine load ([#39](https://github.com/willzhu16/athena/issues/39)) ([fc07e8b](https://github.com/willzhu16/athena/commit/fc07e8b29a80466310e2c9de6f08af7867a0cc36))
+
 ## [1.9.1](https://github.com/willzhu16/athena/compare/v1.9.0...v1.9.1) (2026-09-24)
 
 
