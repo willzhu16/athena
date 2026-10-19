@@ -10,6 +10,9 @@
     "fileName": "reports/mutation.json"
   },
   "coverageAnalysis": "perTest",
+  "_timeoutComment": "A mutant that merely makes the code SLOWER must be judged on whether a test noticed, not on a stopwatch. The default 5000ms/1.5 was tight enough that weakenings.test.ts, which copies the shipped config and so covers most of harness-lint, pushed slow-but-terminating mutants over the line. Measured on 59d8c52, same machine, back to back: at the default the score read 93.25, 93.09 and 94.49 with 56 to 87 timeouts, because a busier machine reclassified survivors as kills. At these values three consecutive runs read 90.50, 90.50 and 90.50, identical down to the 1674 killed, 2 timeouts and 160 survived. The honest number is the lower one. Raising this costs no wall clock (2m04s against 2m01s) because the mutants were never running for 60s, they just needed more than 5. Ratchet `break` against a run made with these timeouts, never against a lucky one.",
+  "timeoutMS": 60000,
+  "timeoutFactor": 4,
   "thresholds": {
     "high": 95,
     "low": 87,
