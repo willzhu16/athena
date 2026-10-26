@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!node_modules", "!coverage", "!harness-scorecard.json"]
+    "includes": [
+      "**",
+      "!node_modules",
+      "!coverage",
+      "!harness-scorecard.json",
+      "!**/*.md",
+      "!**/*.yml",
+      "!**/*.yaml"
+    ]
   },
   "formatter": {
     "enabled": true,
