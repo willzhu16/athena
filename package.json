@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@11.28.8",
   "scripts": {
     "lint": "biome ci .",
     "typecheck": "tsc --noEmit",
@@ -16,8 +16,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
-    "@stryker-mutator/core": "10.0.0",
-    "@stryker-mutator/vitest-runner": "10.0.0",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/node": "^24.13.4",
     "@vitest/coverage-v8": "^4.1.11",
     "fast-check": "^4.10.0",
