@@ -60,7 +60,8 @@ const withProject = (
 // pnpm cold-starting under parallel load took 5.3s on this machine — past vitest's 5s
 // default, which failed the whole file for timing rather than for behaviour. A flaky gate
 // test is worse than none: it teaches people to rerun until green.
-describe.sequential('the gate hook decides whether an agent may call its work done', {
+describe('the gate hook decides whether an agent may call its work done', {
+  concurrent: false,
   timeout: 30_000,
 }, () => {
   it('lets the turn end when lint and typecheck both pass', () => {
