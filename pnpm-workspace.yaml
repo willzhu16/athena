@@ -1,5 +1,3 @@
-# pnpm reads build-script approvals here. esbuild ships a prebuilt binary and needs its
-# install script to run; tsx and vitest depend on it.
 allowBuilds:
   esbuild: true
 
@@ -15,4 +13,4 @@ overrides:
   # calls only Minimatch#match, #negate, #hasMagic and minimatch(), none of which 11.0 removed.
   # Pinned, not a range, so a later major cannot reach Stryker untested. Drop this once a
   # Stryker release accepts minimatch 11.
-  minimatch: 11.0.3
+  minimatch: 11.0.5
