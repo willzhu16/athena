@@ -13,4 +13,4 @@ overrides:
   # calls only Minimatch#match, #negate, #hasMagic and minimatch(), none of which 11.0 removed.
   # Pinned, not a range, so a later major cannot reach Stryker untested. Drop this once a
   # Stryker release accepts minimatch 11.
-  minimatch: 11.0.8
+  minimatch: 11.0.9
